@@ -1,0 +1,4 @@
+venv/
+training_data/
+__pycache__/
+.claude/
