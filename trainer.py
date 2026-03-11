@@ -246,7 +246,7 @@ class Trainer:
             get_transforms(cfg, "val"),
         )
 
-        nw       = min(4, os.cpu_count() or 1)
+        nw       = min(8, os.cpu_count() or 1)
         use_cuda = torch.cuda.is_available()
         train_loader = DataLoader(
             train_ds, batch_size=cfg["batch_size"],
@@ -311,9 +311,18 @@ class Trainer:
             ],
             weight_decay=cfg["weight_decay"],
         )
-        # CosineAnnealingLR: smoothly decays LR without aggressive plateau collapse
-        sch2 = torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt2, T_max=cfg["stage2_epochs"], eta_min=1e-7,
+        # Linear warmup for warmup_epochs, then cosine annealing to eta_min.
+        # Warmup prevents abrupt gradient shifts when backbone is first unfrozen.
+        warmup_epochs  = cfg.get("warmup_epochs", 3)
+        cosine_epochs  = max(cfg["stage2_epochs"] - warmup_epochs, 1)
+        warmup_sched   = torch.optim.lr_scheduler.LinearLR(
+            opt2, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs,
+        )
+        cosine_sched   = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt2, T_max=cosine_epochs, eta_min=1e-7,
+        )
+        sch2 = torch.optim.lr_scheduler.SequentialLR(
+            opt2, schedulers=[warmup_sched, cosine_sched], milestones=[warmup_epochs],
         )
 
         es_counter   = 0
@@ -391,6 +400,9 @@ class Trainer:
             optimizer.zero_grad()
             loss = criterion(model(imgs), lbls)
             loss.backward()
+            grad_clip = self.cfg.get("grad_clip", 0.0)
+            if grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
             optimizer.step()
             total += loss.item() * imgs.size(0)
 

@@ -50,34 +50,41 @@ CFG = {
     "dropout_2"         : 0.2,    # before final linear
 
     # --- loss ---
-    # "focal"        : RECOMMENDED for severe imbalance (161:1).  alpha must be HIGH
-    #                  to upweight the malignant minority.
+    # "focal"        : RECOMMENDED for severe imbalance (161:1).
     #                  alpha_t = alpha  for malignant (target=1)
     #                  alpha_t = 1-alpha for benign   (target=0)
-    #                  → alpha=0.85 means malignant gets 5.7× more attention than benign
+    #
+    #                  IMPORTANT: WeightedRandomSampler already balances batches to ~50/50,
+    #                  so alpha=0.85 double-compensates and over-weights malignant, causing
+    #                  recall to degrade over training epochs.  Use alpha=0.5 (neutral) when
+    #                  WRS is active, and let gamma do the hard-example focusing.
+    #
     # "weighted_bce" : alternative; pos_weight capped at 80 to avoid gradient explosion
     "loss"              : "focal",
-    "focal_alpha"       : 0.85,   # HIGH — upweights malignant minority (was 0.25, which was WRONG)
-    "focal_gamma"       : 2.5,    # slightly higher than default to focus harder on hard malignant cases
+    "focal_alpha"       : 0.5,    # NEUTRAL — WRS already balances batches; let gamma focus
+    "focal_gamma"       : 2.5,    # hard-example focusing (down-weights easy negatives)
+    "label_smoothing"   : 0.1,    # regularisation: prevents over-confident predictions
 
     # --- optimiser ---
     "weight_decay"      : 1e-4,
+    "grad_clip"         : 1.0,    # max gradient norm; stabilises training with focal loss
     "bce_pos_weight_cap": 80.0,   # caps pos_weight for weighted_bce; raw ratio ~161 causes instability
 
     # --- two-stage LRs ---
     "head_lr"           : 3e-4,   # Stage 1  (head only, backbone frozen)
-    "backbone_lr"       : 5e-6,   # Stage 2  (backbone fine-tune) — halved; 1e-5 converges too fast
+    "backbone_lr"       : 1e-5,   # Stage 2  (backbone fine-tune) — raised from 5e-6; allows more adaptation
     "head_lr_s2"        : 1e-4,   # Stage 2  (head)
 
     # --- schedule ---
-    # Stage 1 uses ReduceLROnPlateau; Stage 2 uses CosineAnnealingLR (avoids LR collapse)
+    # Stage 1 uses ReduceLROnPlateau; Stage 2 uses warmup + CosineAnnealingLR
     "scheduler_factor"  : 0.5,    # Stage 1 ReduceLROnPlateau factor
     "scheduler_patience": 3,      # Stage 1 ReduceLROnPlateau patience
+    "warmup_epochs"     : 3,      # Stage 2: linear LR warmup before cosine annealing
 
     # --- training ---
     "stage1_epochs"     : 5,      # freeze backbone, train head only
     "stage2_epochs"     : 30,     # unfreeze and fine-tune
-    "es_patience"       : 7,      # increased — AUC improves more slowly than loss
+    "es_patience"       : 10,     # increased — give model more room to improve AUC
     "es_delta"          : 5e-4,   # min AUC improvement to reset patience
 
     # --- normalization (ImageNet) ---
@@ -106,13 +113,18 @@ def get_transforms(cfg: dict, mode: str) -> transforms.Compose:
 
     if mode == "train":
         return transforms.Compose([
-            transforms.RandomResizedCrop(size, scale=(0.8, 1.0)),
+            transforms.RandomResizedCrop(size, scale=(0.7, 1.0)),  # wider scale range
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
-            transforms.RandomRotation(degrees=15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
+            transforms.RandomRotation(degrees=30),                  # more rotation (lesions appear at any angle)
+            transforms.ColorJitter(
+                brightness=0.3, contrast=0.3,
+                saturation=0.2, hue=0.05,                          # saturation/hue vary across skin tones & devices
+            ),
+            transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)),  # simulate focus / imaging variation
             transforms.ToTensor(),
             normalize,
+            transforms.RandomErasing(p=0.3, scale=(0.02, 0.15)),   # simulate dermoscopy hair / ink artifacts
         ])
 
     return transforms.Compose([
@@ -323,21 +335,27 @@ class EfficientNetB0Classifier(nn.Module):
 
 class FocalLoss(nn.Module):
     """
-    Binary focal loss.
+    Binary focal loss with optional label smoothing.
       FL = -alpha_t * (1 - p_t)^gamma * log(p_t)
 
     Use when the model over-predicts the benign majority class or when
     hard-example emphasis is needed.
+
+    label_smoothing > 0 prevents overconfident hard targets and acts as
+    regularisation (smooths 0→ε/2, 1→1-ε/2).
     """
 
-    def __init__(self, alpha: float = 0.25, gamma: float = 2.0):
+    def __init__(self, alpha: float = 0.25, gamma: float = 2.0, label_smoothing: float = 0.0):
         super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
+        self.alpha           = alpha
+        self.gamma           = gamma
+        self.label_smoothing = label_smoothing
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         targets = targets.view(-1, 1)
         logits  = logits.view(-1, 1)
+        if self.label_smoothing > 0.0:
+            targets = targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
         bce     = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         p_t     = torch.exp(-bce)
         alpha_t = self.alpha * targets + (1.0 - self.alpha) * (1.0 - targets)
@@ -350,20 +368,23 @@ def build_loss(cfg: dict, pos_count: int = None, neg_count: int = None) -> nn.Mo
     Build the loss function.
 
     Focal loss:
-      alpha must be HIGH (>=0.80) to upweight malignant.
+      Use alpha=0.5 when WeightedRandomSampler is active (balanced batches).
+      Use alpha>=0.80 only without WRS (raw imbalanced batches).
       alpha_t = alpha  for malignant (target=1)
       alpha_t = 1-alpha for benign   (target=0)
+      label_smoothing regularises hard targets and prevents overconfidence.
 
     Weighted BCE:
       pos_weight = neg/pos, capped at bce_pos_weight_cap.
       Raw 161:1 ratio causes gradient instability; cap at 80.
     """
     if cfg["loss"] == "focal":
-        alpha = cfg["focal_alpha"]
-        gamma = cfg["focal_gamma"]
-        print(f"FocalLoss  alpha={alpha}  gamma={gamma}  "
+        alpha  = cfg["focal_alpha"]
+        gamma  = cfg["focal_gamma"]
+        smooth = cfg.get("label_smoothing", 0.0)
+        print(f"FocalLoss  alpha={alpha}  gamma={gamma}  label_smoothing={smooth}  "
               f"(malignant weight={alpha:.2f}, benign weight={1-alpha:.2f})")
-        return FocalLoss(alpha=alpha, gamma=gamma)
+        return FocalLoss(alpha=alpha, gamma=gamma, label_smoothing=smooth)
 
     if cfg["loss"] == "weighted_bce":
         cap = cfg.get("bce_pos_weight_cap", 80.0)
