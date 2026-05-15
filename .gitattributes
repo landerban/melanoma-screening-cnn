@@ -1,0 +1,5 @@
+* text=auto eol=lf
+best_model.pth binary
+*.pth binary
+*.jpg binary
+*.png binary
