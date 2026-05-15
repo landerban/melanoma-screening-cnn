@@ -259,6 +259,37 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
 
 
 # ---------------------------------------------------------------------------
+# Phase 4f: dynamic threshold mini-sweep used by _val_ep per epoch
+# ---------------------------------------------------------------------------
+
+def _mini_threshold_sweep(labels: np.ndarray, probs: np.ndarray) -> float:
+    """
+    Per-epoch threshold selection on the same val cohort the loop is
+    monitoring. NOT the headline operating threshold -- that's selected
+    once at the end by Trainer._sweep_threshold on the cal cohort (Phase 4c).
+    The per-epoch threshold exists so the training plot reports recall /
+    specificity / F1 at a sensible operating point rather than at 0.5,
+    which produces misleading curves at this class imbalance.
+
+    Strategy: max specificity subject to recall >= 0.80, fallback to
+    Youden's J. Clamped to [0.05, 0.95].
+    """
+    if len(np.unique(labels)) < 2:
+        return 0.5
+    fpr, tpr, thresholds = roc_curve(labels, probs)
+    spec_arr   = 1.0 - fpr
+    recall_arr = tpr
+    mask = recall_arr >= 0.80
+    if mask.any():
+        best_idx = int(np.argmax(spec_arr[mask]))
+        t = float(thresholds[mask][best_idx])
+    else:
+        j = recall_arr + spec_arr - 1.0
+        t = float(thresholds[int(np.argmax(j))])
+    return max(0.05, min(0.95, t))
+
+
+# ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
 
@@ -607,13 +638,22 @@ class Trainer:
         return total / len(loader.dataset)
 
     @torch.no_grad()
-    def _val_ep(self, model, loader, criterion, device, threshold: float = 0.5):
+    def _val_ep(self, model, loader, criterion, device, threshold: float | None = None):
         """
-        Phase 4b: threshold parameterized so the held-out test eval can use
-        the calibrated operating threshold from _sweep_threshold, not 0.5.
-        Phase 4f changes the per-epoch threshold to a dynamic mini-sweep;
-        the default 0.5 is kept for backward compatibility with any callers
-        that haven't migrated.
+        Phase 4f: when `threshold` is None (per-epoch case), run a mini-sweep
+        and report metrics at the recall>=0.80 / max-specificity threshold
+        found on this loader's predictions. This replaces the prior fixed
+        threshold=0.5 which produced the misleading "recall declining over
+        epochs" curve in the training plot (the model was just becoming
+        more confident, not worse at malignant detection).
+
+        When `threshold` is a float (e.g. test eval after the cal sweep),
+        use it directly so the test recall/spec are measured at the
+        calibrated operating point.
+
+        Returns: (loss, metrics_dict). metrics_dict includes the
+        per-epoch threshold under key "threshold_dyn" so the plot can
+        label the curves appropriately.
         """
         model.eval()
         total      = 0.0
@@ -629,7 +669,6 @@ class Trainer:
 
         probs  = torch.cat(all_probs).numpy()
         labels = torch.cat(all_labels).numpy().astype(int)
-        preds  = (probs >= threshold).astype(int)
 
         try:
             auc    = roc_auc_score(labels, probs)
@@ -637,6 +676,13 @@ class Trainer:
         except ValueError:
             auc = pr_auc = float("nan")
 
+        # Phase 4f: dynamic per-epoch threshold when caller passed None.
+        if threshold is None:
+            t_used = _mini_threshold_sweep(labels, probs)
+        else:
+            t_used = float(threshold)
+
+        preds  = (probs >= t_used).astype(int)
         cm = confusion_matrix(labels, preds)
         tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
 
@@ -648,6 +694,7 @@ class Trainer:
             "auc": auc, "pr_auc": pr_auc,
             "recall": recall, "specificity": spec, "f1": f1,
             "tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp),
+            "threshold_dyn": float(t_used),
         }
 
     @torch.no_grad()
