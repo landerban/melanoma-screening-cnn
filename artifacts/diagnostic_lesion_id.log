@@ -1,0 +1,56 @@
+Scanning 3 per-collection CSV(s) under /home/elicer/AI_project/training_data
+
+PER-COLLECTION REPORT
+------------------------------------------------------------------------------
+  metadata_c212.csv
+    rows                  : 11,720
+    has lesion_id         : True
+    NaN lesion_id rows    : 0
+    unique lesion_id      : 8,838
+    mean rows / lesion    : 1.326
+    median rows / lesion  : 1.0
+    max rows / lesion     : 6
+    unique/rows ratio     : 0.754  (1.0 = 1:1 image-level)
+    -> Weak grouping (mean < 2). Honest patient-proxy but the
+       leakage protection it provides is limited.
+
+  metadata_c249.csv
+    rows                  : 18,946
+    has lesion_id         : True
+    NaN lesion_id rows    : 0
+    unique lesion_id      : 5,440
+    mean rows / lesion    : 3.483
+    median rows / lesion  : 3.0
+    max rows / lesion     : 31
+    unique/rows ratio     : 0.287  (1.0 = 1:1 image-level)
+    -> Genuine multi-images-per-lesion grouping. Defensible as
+       a patient-proxy for split purposes.
+
+  metadata_c70.csv
+    rows                  : 33,126
+    has lesion_id         : True
+    NaN lesion_id rows    : 0
+    unique lesion_id      : 32,701
+    mean rows / lesion    : 1.013
+    median rows / lesion  : 1.0
+    max rows / lesion     : 2
+    unique/rows ratio     : 0.987  (1.0 = 1:1 image-level)
+    -> NEAR 1:1 GROUPING. Using lesion_id as patient-proxy here
+       is effectively image-level split. Disclose on slide as such.
+
+
+POST-MERGE GROUPING
+------------------------------------------------------------------------------
+effective_patient_id = patient_id || lesion_id || isic_id
+
+  rows after concat+dedup+label filter : 61,396
+  effective_patient_id NaN rows        : 0
+  unique effective_patient_ids         : 15,558
+  mean rows per group                  : 3.946
+  median rows per group                : 2.0
+  max rows per group                   : 115
+
+  effective_patient_id source breakdown:
+    patient_id  : 33,123 rows  (53.95%)
+    lesion_id   : 28,273 rows  (46.05%)
+    isic_id     :      0 rows  ( 0.00%)
