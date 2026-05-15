@@ -8,8 +8,10 @@ import json
 import os
 import random
 import re
+import subprocess
 import threading
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -125,6 +127,43 @@ class GradCAM:
         cam     = cam.squeeze().cpu().numpy()
         cam     = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
         return cam
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint format (Phase 4e)
+# ---------------------------------------------------------------------------
+
+def _git_hash() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+def build_ckpt_dict(state_dict, cfg, best_auc: float, best_epoch: int,
+                    val_metrics: dict | None = None,
+                    optimal_threshold: float | None = None,
+                    test_metrics: dict | None = None) -> dict:
+    """
+    Phase 4e: rich checkpoint format. Embeds enough metadata that a freshly
+    loaded `best_model.pth` can identify itself -- which cfg trained it, which
+    git commit, val/test metrics, calibrated threshold. Addresses audit H5
+    ("which checkpoint is this?" reproduction risk).
+    """
+    return {
+        "state_dict"        : state_dict,
+        "cfg"               : dict(cfg),                 # shallow copy
+        "best_auc"          : float(best_auc),
+        "best_epoch"        : int(best_epoch),
+        "val_metrics"       : val_metrics,
+        "optimal_threshold" : optimal_threshold,
+        "test_metrics"      : test_metrics,
+        "git_hash"          : _git_hash(),
+        "timestamp"         : datetime.now(timezone.utc).isoformat(),
+        "torch_version"     : torch.__version__,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -426,9 +465,11 @@ class Trainer:
             opt2, T_max=cfg["stage2_epochs"], eta_min=1e-7,
         )
 
-        es_counter   = 0
-        best_auc     = 0.0
-        best_weights = None
+        es_counter       = 0
+        best_auc         = 0.0
+        best_weights     = None
+        best_epoch       = 0          # Phase 4e: track for ckpt dict
+        best_val_metrics = None       # Phase 4e: val metrics at best epoch
 
         for ep in range(1, cfg["stage2_epochs"] + 1):
             if s.stop_requested:
@@ -444,10 +485,19 @@ class Trainer:
             cur_auc = m["auc"]
             # ---- Early stopping on AUC (maximize), not val_loss ----
             if cur_auc > best_auc + cfg["es_delta"]:
-                best_auc     = cur_auc
-                es_counter   = 0
-                best_weights = copy.deepcopy(model.state_dict())
-                torch.save(best_weights, self.CKPT)
+                best_auc         = cur_auc
+                best_epoch       = ep
+                best_val_metrics = dict(m)
+                best_val_metrics["loss"] = float(vl)
+                es_counter       = 0
+                best_weights     = copy.deepcopy(model.state_dict())
+                # Phase 4e: save as rich dict. optimal_threshold + test_metrics
+                # are filled in by the final save after threshold sweep + test eval.
+                ckpt = build_ckpt_dict(
+                    best_weights, cfg, best_auc, best_epoch,
+                    val_metrics=best_val_metrics,
+                )
+                torch.save(ckpt, self.CKPT)
                 s.best_model_path  = self.CKPT
                 s.best_auc         = best_auc
                 s.best_val_loss    = vl      # keep for display
@@ -505,13 +555,24 @@ class Trainer:
             f"FN={test_m['fn']} TP={test_m['tp']}  (n_pos={test_m['n_pos']}, n_neg={test_m['n_neg']})"
         )
 
-        # Persist test metrics alongside the checkpoint. Phase 4e folds these
-        # into the checkpoint dict; until then a sidecar JSON is the source of truth.
+        # Phase 4b: keep the sidecar JSON for human readability.
         test_metrics_path = Path(self.CKPT).with_suffix(".test_metrics.json")
         serializable = {k: (float(v) if hasattr(v, "item") else v) for k, v in test_m.items()}
         with open(test_metrics_path, "w") as f:
             json.dump(serializable, f, indent=2)
         s.log_line(f"Saved test metrics to {test_metrics_path}")
+
+        # Phase 4e: final save with optimal_threshold + test_metrics populated.
+        # This overwrites the mid-training partial save with the complete dict.
+        if best_weights is not None:
+            final_ckpt = build_ckpt_dict(
+                best_weights, cfg, best_auc, best_epoch,
+                val_metrics=best_val_metrics,
+                optimal_threshold=float(opt_thresh),
+                test_metrics=serializable,
+            )
+            torch.save(final_ckpt, self.CKPT)
+            s.log_line(f"Saved final checkpoint with metadata to {self.CKPT}")
 
         s.running = False
         s.done    = True

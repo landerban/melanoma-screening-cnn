@@ -192,6 +192,26 @@ def cb_stop():
 # Inference callback
 # ---------------------------------------------------------------------------
 
+def _load_ckpt_state_dict(ckpt_path: str, device):
+    """
+    Phase 4e: load both rich-dict and legacy-bare-state-dict checkpoints.
+    Rich format (Phase 4e onward) is a dict with at least a "state_dict" key
+    plus metadata (cfg, optimal_threshold, val_metrics, test_metrics, git_hash,
+    etc.). Legacy format is a flat state_dict. We trust our own ckpts so
+    weights_only=False is acceptable; raise if neither format matches.
+    """
+    obj = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if isinstance(obj, dict) and "state_dict" in obj:
+        return obj["state_dict"]
+    # Legacy bare state_dict: dict[str, Tensor] without "state_dict" wrapper
+    if isinstance(obj, dict) and all(hasattr(v, "shape") for v in obj.values()):
+        return obj
+    raise RuntimeError(
+        f"Unrecognized checkpoint format at {ckpt_path}. Expected a dict with "
+        f"'state_dict' (Phase 4e+) or a bare state_dict (legacy)."
+    )
+
+
 def cb_predict(img_np, ckpt_path, threshold):
     if img_np is None:
         return None, "No image uploaded."
@@ -201,7 +221,7 @@ def cb_predict(img_np, ckpt_path, threshold):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = EfficientNetB0Classifier(freeze_backbone=False).to(device)
-    model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+    model.load_state_dict(_load_ckpt_state_dict(ckpt_path, device))
     model.eval()
 
     transform  = get_transforms(CFG, "val")
