@@ -189,12 +189,19 @@ def patient_level_split(
     df,
     patient_col: str  = "patient_id",
     label_col: str    = "label",
-    val_frac: float   = 0.15,
+    val_frac: float   = 0.10,
+    cal_frac: float   = 0.10,
     test_frac: float  = 0.15,
     seed: int         = 42,
 ):
     """
-    Split a DataFrame at the PATIENT level to prevent leakage.
+    Split a DataFrame at the PATIENT level to prevent leakage. Phase 4c
+    extended this to a four-way train/val/cal/test split so the threshold
+    sweep can run on a held-out cal cohort (addresses audit weakness W1:
+    previously the threshold was calibrated on the same val set that drove
+    early stopping and best-epoch selection).
+
+    Default fractions: train=0.65, val=0.10, cal=0.10, test=0.15.
 
     Args:
         df          : pandas DataFrame with at least [patient_col, label_col, "image_path"]
@@ -206,15 +213,19 @@ def patient_level_split(
                       `patient_col` was missing -- that was an image-level random
                       split disguised as patient-level (CLAUDE.md hard constraint #1).
         label_col   : column holding the binary label (0/1)
-        val_frac    : fraction of patients for validation
-        test_frac   : fraction of patients for test
+        val_frac    : fraction of patients for validation (used by stage-2 ES)
+        cal_frac    : fraction of patients for threshold calibration (Phase 4c).
+                      _sweep_threshold consumes this cohort, NOT val.
+        test_frac   : fraction of patients for test (the headline-number cohort)
         seed        : random seed
 
     Returns:
-        train_df, val_df, test_df
+        train_df, val_df, cal_df, test_df
 
     Example:
-        train_df, val_df, test_df = patient_level_split(metadata_df, patient_col="effective_patient_id")
+        train_df, val_df, cal_df, test_df = patient_level_split(
+            metadata_df, patient_col="effective_patient_id"
+        )
 
     WARNING: never pass image_id as the split key — use the patient or lesion id.
     """
@@ -244,27 +255,36 @@ def patient_level_split(
     n       = len(patients)
     n_test  = int(n * test_frac)
     n_val   = int(n * val_frac)
+    n_cal   = int(n * cal_frac)
 
+    # Order: test first (held out, untouched until final eval), then cal
+    # (threshold sweep), then val (early-stopping), then train.
     test_patients  = patients[:n_test]
-    val_patients   = patients[n_test: n_test + n_val]
-    train_patients = patients[n_test + n_val:]
+    cal_patients   = patients[n_test: n_test + n_cal]
+    val_patients   = patients[n_test + n_cal: n_test + n_cal + n_val]
+    train_patients = patients[n_test + n_cal + n_val:]
 
     train_df = df[df[patient_col].isin(train_patients)].reset_index(drop=True)
     val_df   = df[df[patient_col].isin(val_patients)].reset_index(drop=True)
+    cal_df   = df[df[patient_col].isin(cal_patients)].reset_index(drop=True)
     test_df  = df[df[patient_col].isin(test_patients)].reset_index(drop=True)
 
     print(f"Split  →  train: {len(train_df)} imgs ({len(train_patients)} patients) | "
           f"val: {len(val_df)} imgs ({len(val_patients)} patients) | "
+          f"cal: {len(cal_df)} imgs ({len(cal_patients)} patients) | "
           f"test: {len(test_df)} imgs ({len(test_patients)} patients)")
 
     # Leakage sanity check
     overlap = (set(train_patients) & set(val_patients)) | \
+              (set(train_patients) & set(cal_patients)) | \
               (set(train_patients) & set(test_patients)) | \
-              (set(val_patients)   & set(test_patients))
+              (set(val_patients)   & set(cal_patients)) | \
+              (set(val_patients)   & set(test_patients)) | \
+              (set(cal_patients)   & set(test_patients))
     if overlap:
         warnings.warn(f"Patient leakage detected in {len(overlap)} patient(s)!")
 
-    return train_df, val_df, test_df
+    return train_df, val_df, cal_df, test_df
 
 
 # =============================================================================

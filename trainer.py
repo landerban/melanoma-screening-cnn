@@ -282,10 +282,17 @@ class Trainer:
             "load_and_merge_metadata must produce effective_patient_id (Phase 4a)"
         assert df["effective_patient_id"].notna().all(), \
             f"effective_patient_id has {int(df['effective_patient_id'].isna().sum())} NaN rows"
-        # Phase 4b: capture test_df instead of discarding. The headline AUC
-        # for the slides comes from test, not val.
-        train_df, val_df, test_df = patient_level_split(df, patient_col="effective_patient_id")
-        s.log_line(f"Split → train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
+        # Phase 4c: four-way split. cal_df owns the threshold sweep so the
+        # operating threshold isn't selected on the same cohort that drove ES
+        # and best-epoch selection (audit weakness W1). test_df is the
+        # held-out headline cohort (W2).
+        train_df, val_df, cal_df, test_df = patient_level_split(
+            df, patient_col="effective_patient_id"
+        )
+        s.log_line(
+            f"Split → train: {len(train_df)}  val: {len(val_df)}  "
+            f"cal: {len(cal_df)}  test: {len(test_df)}"
+        )
 
         train_ds = SkinLesionDataset(
             train_df["image_path"].tolist(),
@@ -295,6 +302,11 @@ class Trainer:
         val_ds = SkinLesionDataset(
             val_df["image_path"].tolist(),
             val_df["label"].tolist(),
+            get_transforms(cfg, "val"),
+        )
+        cal_ds = SkinLesionDataset(
+            cal_df["image_path"].tolist(),
+            cal_df["label"].tolist(),
             get_transforms(cfg, "val"),
         )
         test_ds = SkinLesionDataset(
@@ -312,6 +324,10 @@ class Trainer:
         )
         val_loader = DataLoader(
             val_ds, batch_size=cfg["batch_size"],
+            shuffle=False, num_workers=nw, pin_memory=use_cuda,
+        )
+        cal_loader = DataLoader(
+            cal_ds, batch_size=cfg["batch_size"],
             shuffle=False, num_workers=nw, pin_memory=use_cuda,
         )
         test_loader = DataLoader(
@@ -427,10 +443,12 @@ class Trainer:
         if best_weights:
             model.load_state_dict(best_weights)
 
-        # ---- Threshold sweep on validation set ----
+        # ---- Phase 4c: threshold sweep on the held-out CAL set (not val) ----
+        # The cal cohort was never touched during training or early stopping,
+        # so the resulting threshold is honest -- this addresses audit W1.
         s.log_line("─" * 50)
-        s.log_line("Threshold sweep on validation set …")
-        opt_thresh = self._sweep_threshold(model, val_loader, device)
+        s.log_line("Threshold sweep on held-out cal set …")
+        opt_thresh = self._sweep_threshold(model, cal_loader, device)
         s.optimal_threshold = opt_thresh
         s.log_line(f"Optimal threshold (recall≥0.80, max specificity): {opt_thresh:.3f}")
 

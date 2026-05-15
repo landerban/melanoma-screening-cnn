@@ -50,8 +50,10 @@ def collect_val_probs(ckpt_path: str) -> tuple[np.ndarray, np.ndarray]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     df = load_and_merge_metadata("training_data", "training_data/images")
-    pcol = "patient_id" if "patient_id" in df.columns else "isic_id"
-    _, val_df, _ = patient_level_split(df, patient_col=pcol)
+    # Phase 4a: load_and_merge_metadata now produces effective_patient_id;
+    # Phase 4c: patient_level_split returns 4-way (train/val/cal/test).
+    pcol = "effective_patient_id" if "effective_patient_id" in df.columns else "patient_id"
+    _, val_df, _, _ = patient_level_split(df, patient_col=pcol)
 
     ds = SkinLesionDataset(
         val_df["image_path"].tolist(),

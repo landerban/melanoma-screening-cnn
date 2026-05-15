@@ -77,11 +77,11 @@ def main(ckpt_path: str = "best_model.pth", threshold: float = 0.347) -> None:
 
     df = load_and_merge_metadata("training_data", "training_data/images")
     df = tag_source_collection(df, "training_data")
-    pcol = "patient_id" if "patient_id" in df.columns else "isic_id"
+    # Phase 4a/4c: prefer effective_patient_id; split returns 4-way.
+    pcol = "effective_patient_id" if "effective_patient_id" in df.columns else "patient_id"
 
-    # Same split logic as bootstrap_auc_ci.py -- same seed, same broken patient_id
-    # column, so the val cohort matches Phase 3 before filtering.
-    _, val_df, _ = patient_level_split(df, patient_col=pcol)
+    # Same seeded split as Phase 3 bootstrap.
+    _, val_df, _, _ = patient_level_split(df, patient_col=pcol)
 
     full_n = len(val_df)
     full_pos = int((val_df["label"] == 1).sum())
