@@ -332,6 +332,42 @@ class Trainer:
     # ------------------------------------------------------------------
 
     def _run(self):
+        """
+        Two-stage training loop with audit-fixed methodology. The four hard
+        constraints from CLAUDE.md, restated:
+
+        1. Patient-level split via effective_patient_id (4a). NaN-bucket leak
+           is gone; image-level fallback is gone.
+        2. Focal loss alpha=0.85 (NOT 0.25). alpha weights positives in this
+           implementation; high alpha for the rare malignant class.
+        3. Early stopping monitors AUC, not val loss. See the §6 vs §8 framing
+           below for the correct rationale -- the previous "val loss falls
+           while recall@0.5 falls" story was misleading.
+        4. Threshold sweep runs on the CAL cohort (4c), not val. Calibration
+           is therefore independent of the cohort that drove ES.
+
+        Phase 4h: §6 vs §8 framing -- the correct story for the ES-on-AUC slide.
+
+        Val loss at heavy class imbalance is dominated by the benign majority.
+        A model can reduce val loss by tightening benign confidence variance
+        (more probs concentrate near 0) without improving its ability to
+        separate the two classes. AUC measures separability regardless of
+        confidence calibration, so it is the right summary statistic at this
+        imbalance.
+
+        The recall-at-threshold=0.5 drop sometimes seen across stage-2 epochs
+        is a confidence-calibration shift (more positive probs crossing the
+        0.5 line strongly enough to flip), NOT a separation degradation. The
+        per-epoch dynamic threshold (Phase 4f) keeps the reported recall /
+        specificity / F1 curves comparable across epochs; the static-0.5
+        framing in the old training plot was misleading.
+
+        Headline numbers (Phase 4b + 4e):
+          * val AUC at the best-AUC epoch is reported but is NOT the headline.
+          * The threshold sweep on cal (4c) picks the operating threshold.
+          * The test eval (4b) at that threshold produces the slide-ready
+            recall / spec / CM. The checkpoint dict (4e) embeds all of this.
+        """
         s   = self.state
         cfg = self.cfg
 
@@ -515,6 +551,12 @@ class Trainer:
 
             cur_auc = m["auc"]
             # ---- Early stopping on AUC (maximize), not val_loss ----
+            # Why AUC, not val loss: val loss is dominated by the benign
+            # majority. A model can reduce val loss by tightening benign
+            # confidence variance without improving class separability. AUC
+            # measures separability regardless of confidence calibration, so
+            # it's the right ES signal at heavy imbalance. See Trainer._run
+            # docstring for the long-form §6 vs §8 framing.
             if cur_auc > best_auc + cfg["es_delta"]:
                 best_auc         = cur_auc
                 best_epoch       = ep
