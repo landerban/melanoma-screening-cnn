@@ -2,3 +2,6 @@ venv/
 training_data/
 __pycache__/
 .claude/
+# Phase 2 download artifacts (isic-cli logs)
+download_*.log
+.download_pids
