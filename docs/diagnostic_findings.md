@@ -244,3 +244,76 @@ NEW val split.
 > The headline AUC for the midterm comes from the RETRAINED model on
 > the new held-out test split (Phase 7a) plus PAD-UFES-20 (Phase 7b).
 > This number does NOT go on slide 7.
+
+---
+
+## Ghost evaluation -- old ckpt on c=70 + c=212 only (filter was a no-op)
+
+`scripts/eval_oldckpt_no_c249.py` was designed to filter the val to
+c=70 + c=212 rows and re-run inference, so we could disambiguate
+"c=390 wasn't carrying the discriminative signal" from "c=249 is OOD
+for an old checkpoint." Result: **the filter dropped 0 rows.** The val
+cohort is already c=70-only before any filtering.
+
+```
+device   : cuda
+ckpt     : best_model.pth
+threshold: 0.347
+
+Split: train 50,723 imgs (1,441 patients) | val 5,168 (308) | test 5,505 (308)
+Full val cohort (matches Phase 3)        : 5,168 (pos=79)
+  source breakdown                       : {'70': 5168}
+Ghost val (c=70 + c=212 only)            : 5,168 (pos=79, neg=5089)
+  dropped (c=249 + any untagged)         : 0
+
+ROC-AUC = 0.6243  [95% CI: 0.5561, 0.6866]  (1000 bootstraps, seed=42)
+At threshold 0.347:
+  recall      = 0.899  (71/79)
+  specificity = 0.204  (1040/5089)
+  CM: TN=1040  FP=4049  FN=8  TP=71
+```
+
+**Why it's a no-op (structural).** All c=212 and c=249 rows have NaN
+`patient_id` and collapse into one synthetic NaN-patient bucket in
+`patient_level_split` (`efficientnet_b0.py:218`). With seed=42 that
+bucket lands in **train**, never in val. So val = 308 c=70 patients,
+~5,168 c=70 images. The c=70+c=212 filter has nothing to filter out.
+
+**What this actually says about the c=390 drop.** The naive ghost
+comparison failed, but the structural picture is cleaner than I had it
+in §3 above:
+
+1. The new val is **c=70 only**. The Phase 3 bootstrap 0.6243 ± 0.065
+   is a c=70-only-val result, NOT a "mixed cohort" result. My write-up
+   in the section above this one framed it as "31% BCN20000
+   composition" -- that framing is wrong and needs the Phase 8 rewrite
+   to correct it.
+2. CLAUDE.md's old val was 53,675 images. The new val is 5,168. The
+   structural difference: the old val almost certainly absorbed the
+   NaN bucket (c=212 + c=390 ≈ 413K rows, of which a portion landed in
+   val per the same shuffle logic). Old val = c=70-val-cohort + NaN
+   bucket (mostly c=390 TBP tiles + c=212 HAM10000 crops).
+3. The 0.928 old headline was measured on that mixed dilution cohort.
+   The 0.624 new bootstrap is c=70 dermoscopy only, with no easy TBP
+   benigns to drag the AUC up.
+
+**Implication for the W8 modality-shortcut concern.** The 0.928 -> 0.624
+gap, viewed structurally, is indirect empirical support for the W8
+concern: a substantial portion of the old AUC came from the easy-TBP
++ easy-HAM10000 dilution. When that dilution is removed (NaN bucket
+shoved to train rather than val), the old checkpoint's c=70-only AUC
+is 0.624. The c=390 drop story is therefore defensible empirically
+through this lens -- just not in the way the original "ghost
+evaluation" plan anticipated.
+
+**Caveat.** This is one number on one shuffle. A cleaner version would
+re-evaluate the old checkpoint on a TBP-rich slice (which we don't have
+the c=390 data for anymore), or compare the new model after Phase 6
+retrain across c=70-only vs c=70+c=212+c=249 val cohorts. The
+structural reading above is consistent with W8 but doesn't rise to
+"proven."
+
+**Net effect on §§3/7/8 narrative.** The §3 "ghost evaluation can
+disambiguate the c=390 question" framing in this document needs to
+mark itself as superseded (the filter was a no-op, but the structural
+reading provides the answer instead). Phase 8 should fold this in.
