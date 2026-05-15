@@ -5,7 +5,9 @@ Consumed by app.py (Gradio UI).
 
 import copy
 import os
+import re
 import threading
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -130,7 +132,20 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
     """
     Scans `training_data_dir` for all CSVs, combines them, deduplicates on
     isic_id, drops Indeterminate, maps labels, and filters to images on disk.
-    Returns a DataFrame with columns: isic_id, patient_id, label, image_path.
+
+    Returns a DataFrame with columns:
+        isic_id, patient_id (optional), lesion_id (optional), diagnosis_1,
+        source_collection, effective_patient_id, label, image_path.
+
+    Phase 4a additions:
+      * source_collection -- parsed from each CSV's filename
+        (`metadata_c<id>.csv` -> `<id>`). Used downstream for the per-collection
+        AUC breakdown (audit W8) and modality-shortcut analysis.
+      * effective_patient_id -- patient_id || lesion_id || isic_id fallback
+        chain. Built BEFORE drop_duplicates so each row's grouping is fixed at
+        ingest. Guaranteed non-NaN; Trainer._run asserts. See
+        docs/diagnostic_findings.md for the per-collection grouping breakdown
+        that justifies this fallback chain.
     """
 
     # Scan training_data/ and any immediate subdirectories (e.g. images/)
@@ -139,18 +154,45 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
     if not csvs:
         raise FileNotFoundError(f"No CSVs found in {training_data_dir} or its subdirectories")
 
+    collection_re = re.compile(r"metadata_c(\d+)\.csv$")
     frames = []
     for p in csvs:
         try:
             df = pd.read_csv(p, low_memory=False)
+            # Phase 4a (W8): tag source_collection from filename. Per-collection
+            # AUC breakdown in Phase 7c needs this; it also lets us track which
+            # rows came from which collection through the merge.
+            m = collection_re.search(p.name)
+            df["source_collection"] = m.group(1) if m else None
             frames.append(df)
         except Exception:
             pass
 
     combined = pd.concat(frames, ignore_index=True)
 
+    # Phase 4a: build effective_patient_id via patient_id || lesion_id || isic_id.
+    # Done BEFORE drop_duplicates so each row's grouping is fixed at ingest.
+    if "patient_id" in combined.columns:
+        eff = combined["patient_id"].copy()
+    else:
+        eff = pd.Series([pd.NA] * len(combined), index=combined.index, dtype=object)
+    if "lesion_id" in combined.columns:
+        eff = eff.fillna(combined["lesion_id"])
+    n_fb_isic_id = int(eff.isna().sum())
+    if "isic_id" in combined.columns:
+        eff = eff.fillna(combined["isic_id"])
+    if n_fb_isic_id > 0:
+        warnings.warn(
+            f"effective_patient_id fell back to isic_id for {n_fb_isic_id:,} rows "
+            f"(no patient_id and no lesion_id). Those rows are image-level-split "
+            f"disguised as patient-level. Disclose on slide."
+        )
+    combined["effective_patient_id"] = eff
+
     # Keep only columns we need; tolerate missing ones
-    keep = [c for c in ["isic_id", "patient_id", "lesion_id", "diagnosis_1"] if c in combined.columns]
+    keep = [c for c in ["isic_id", "patient_id", "lesion_id", "diagnosis_1",
+                        "source_collection", "effective_patient_id"]
+            if c in combined.columns]
     combined = combined[keep].copy()
 
     # Deduplicate on isic_id
@@ -231,8 +273,14 @@ class Trainer:
         if n_pos == 0:
             raise RuntimeError("No malignant images found on disk — check images_dir.")
 
-        patient_col = "patient_id" if "patient_id" in df.columns else "isic_id"
-        train_df, val_df, _ = patient_level_split(df, patient_col=patient_col)
+        # Phase 4a: explicit effective_patient_id key; no silent isic_id fallback.
+        # load_and_merge_metadata guarantees effective_patient_id is non-NaN;
+        # patient_level_split also re-validates and will hard-fail if violated.
+        assert "effective_patient_id" in df.columns, \
+            "load_and_merge_metadata must produce effective_patient_id (Phase 4a)"
+        assert df["effective_patient_id"].notna().all(), \
+            f"effective_patient_id has {int(df['effective_patient_id'].isna().sum())} NaN rows"
+        train_df, val_df, _ = patient_level_split(df, patient_col="effective_patient_id")
         s.log_line(f"Split → train: {len(train_df)}  val: {len(val_df)}")
 
         train_ds = SkinLesionDataset(

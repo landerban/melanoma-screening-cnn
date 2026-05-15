@@ -198,7 +198,13 @@ def patient_level_split(
 
     Args:
         df          : pandas DataFrame with at least [patient_col, label_col, "image_path"]
-        patient_col : column holding the patient / lesion identifier
+        patient_col : column holding the patient identifier. MUST be present in df
+                      AND have no NaN rows. Callers should pass
+                      "effective_patient_id", which `trainer.load_and_merge_metadata`
+                      builds via the patient_id || lesion_id || isic_id fallback chain.
+                      Phase 4a removed the prior silent fallback to `isic_id` when
+                      `patient_col` was missing -- that was an image-level random
+                      split disguised as patient-level (CLAUDE.md hard constraint #1).
         label_col   : column holding the binary label (0/1)
         val_frac    : fraction of patients for validation
         test_frac   : fraction of patients for test
@@ -208,11 +214,28 @@ def patient_level_split(
         train_df, val_df, test_df
 
     Example:
-        train_df, val_df, test_df = patient_level_split(metadata_df)
+        train_df, val_df, test_df = patient_level_split(metadata_df, patient_col="effective_patient_id")
 
     WARNING: never pass image_id as the split key — use the patient or lesion id.
     """
     import pandas as pd
+
+    # Phase 4a: refuse silent fallback to isic_id. If the caller didn't build a
+    # clean effective_patient_id, fail loudly here rather than producing an
+    # image-level split disguised as patient-level.
+    if patient_col not in df.columns:
+        raise ValueError(
+            f"patient_level_split: patient_col={patient_col!r} not in df.columns. "
+            f"Got: {list(df.columns)}. Build effective_patient_id in "
+            f"load_and_merge_metadata before calling."
+        )
+    n_nan = int(df[patient_col].isna().sum())
+    if n_nan > 0:
+        raise ValueError(
+            f"patient_level_split: patient_col={patient_col!r} has {n_nan:,} NaN rows. "
+            f"NaN values collapse into one synthetic patient via np.unique(), which "
+            f"creates a leak. Build a NaN-free effective_patient_id before calling."
+        )
 
     rng      = np.random.default_rng(seed)
     patients = np.array(df[patient_col].unique())
