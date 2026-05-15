@@ -212,6 +212,32 @@ def _load_ckpt_state_dict(ckpt_path: str, device):
     )
 
 
+# Phase 4i: cache the constructed model + GradCAM hook per checkpoint path.
+# Without this, every click on "Run Prediction" reloads ~17 MB of weights from
+# disk and re-installs GradCAM hooks -- a measurable latency hit on the UI.
+# Cache key includes the ckpt's mtime so users editing the same path get
+# a fresh load after retraining.
+_MODEL_CACHE: dict[tuple[str, float], tuple] = {}
+
+
+def _get_cached_model(ckpt_path: str, device):
+    mtime = os.path.getmtime(ckpt_path)
+    key = (ckpt_path, mtime)
+    cached = _MODEL_CACHE.get(key)
+    if cached is not None:
+        return cached
+    model = EfficientNetB0Classifier(freeze_backbone=False).to(device)
+    model.load_state_dict(_load_ckpt_state_dict(ckpt_path, device))
+    model.eval()
+    gcam = GradCAM(model)
+    # Evict any stale entries for the same path (different mtime).
+    for k in list(_MODEL_CACHE.keys()):
+        if k[0] == ckpt_path:
+            del _MODEL_CACHE[k]
+    _MODEL_CACHE[key] = (model, gcam)
+    return model, gcam
+
+
 def cb_predict(img_np, ckpt_path, threshold):
     if img_np is None:
         return None, "No image uploaded."
@@ -219,17 +245,13 @@ def cb_predict(img_np, ckpt_path, threshold):
         return None, f"Checkpoint not found:\n{ckpt_path}\n\nTrain the model first."
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = EfficientNetB0Classifier(freeze_backbone=False).to(device)
-    model.load_state_dict(_load_ckpt_state_dict(ckpt_path, device))
-    model.eval()
+    model, gcam = _get_cached_model(ckpt_path, device)
 
     transform  = get_transforms(CFG, "val")
     img_pil    = Image.fromarray(img_np).convert("RGB")
     img_tensor = transform(img_pil).to(device)
 
     # Grad-CAM (requires grad, so don't wrap in no_grad)
-    gcam = GradCAM(model)
     cam  = gcam.generate(img_tensor)
 
     with torch.no_grad():
