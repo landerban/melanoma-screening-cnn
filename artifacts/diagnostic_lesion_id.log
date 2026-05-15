@@ -54,3 +54,51 @@ effective_patient_id = patient_id || lesion_id || isic_id
     patient_id  : 33,123 rows  (53.95%)
     lesion_id   : 28,273 rows  (46.05%)
     isic_id     :      0 rows  ( 0.00%)
+
+MALIGNANT-CLUSTER-SIZE CHECK
+------------------------------------------------------------------------------
+If malignant-group mean << overall mean, the 'patient-level' protection
+for malignant cases is weaker than the overall mean suggests -- the leak
+the slide claims to prevent (same malignant lesion across splits) gets less
+protection than the headline number implies.
+
+  Overall (post-merge)
+    groups (total)             : 15,558
+    malignant groups           : 4,124
+    benign groups              : 11,434
+    mean size, all             : 3.946
+    mean size, malignant groups: 4.354  (median 2.0, max 115)
+    mean size, benign groups   : 3.799  (median 1.0, max 115)
+    malignant/benign mean ratio: 1.146
+    -> Roughly balanced; overall mean reflects malignant grouping fairly.
+
+  source_collection=212
+    groups (total)             : 8,739
+    malignant groups           : 1,306
+    benign groups              : 7,433
+    mean size, all             : 1.324
+    mean size, malignant groups: 1.651  (median 2.0, max 6)
+    mean size, benign groups   : 1.267  (median 1.0, max 6)
+    malignant/benign mean ratio: 1.303
+    -> Roughly balanced; overall mean reflects malignant grouping fairly.
+
+  source_collection=249
+    groups (total)             : 4,763
+    malignant groups           : 2,390
+    benign groups              : 2,373
+    mean size, all             : 3.507
+    mean size, malignant groups: 3.712  (median 3.0, max 31)
+    mean size, benign groups   : 3.300  (median 3.0, max 19)
+    malignant/benign mean ratio: 1.125
+    -> Roughly balanced; overall mean reflects malignant grouping fairly.
+
+  source_collection=70
+    groups (total)             : 2,056
+    malignant groups           : 428
+    benign groups              : 1,628
+    mean size, all             : 16.110
+    mean size, malignant groups: 16.185  (median 12.0, max 115)
+    mean size, benign groups   : 16.091  (median 12.0, max 115)
+    malignant/benign mean ratio: 1.006
+    -> Roughly balanced; overall mean reflects malignant grouping fairly.
+

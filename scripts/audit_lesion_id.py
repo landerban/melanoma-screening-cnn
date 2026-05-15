@@ -21,10 +21,14 @@ Run from project root:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+
+COLLECTION_RE = re.compile(r"metadata_c(\d+)\.csv$")
 
 
 def per_collection_report(name: str, df: pd.DataFrame) -> None:
@@ -100,6 +104,9 @@ def main(training_data_dir: str = "training_data") -> None:
     frames: dict[str, pd.DataFrame] = {}
     for p in csvs:
         df = pd.read_csv(p, low_memory=False)
+        m = COLLECTION_RE.search(p.name)
+        if m:
+            df["source_collection"] = m.group(1)
         frames[p.name] = df
         per_collection_report(p.name, df)
 
@@ -110,7 +117,8 @@ def main(training_data_dir: str = "training_data") -> None:
     print()
 
     combined = pd.concat(list(frames.values()), ignore_index=True)
-    keep = [c for c in ["isic_id", "patient_id", "lesion_id", "diagnosis_1"] if c in combined.columns]
+    keep = [c for c in ["isic_id", "patient_id", "lesion_id", "diagnosis_1", "source_collection"]
+            if c in combined.columns]
     combined = combined[keep].copy()
     if "isic_id" in combined.columns:
         combined.drop_duplicates(subset="isic_id", inplace=True)
@@ -145,6 +153,58 @@ def main(training_data_dir: str = "training_data") -> None:
         n = int((src == name).sum())
         pct = 100.0 * n / len(combined)
         print(f"    {name:<12}: {n:>6,} rows  ({pct:5.2f}%)")
+
+    # ----------------------------------------------------------------
+    print()
+    print("MALIGNANT-CLUSTER-SIZE CHECK")
+    print("-" * 78)
+    print("If malignant-group mean << overall mean, the 'patient-level' protection")
+    print("for malignant cases is weaker than the overall mean suggests -- the leak")
+    print("the slide claims to prevent (same malignant lesion across splits) gets less")
+    print("protection than the headline number implies.\n")
+
+    nn = combined.dropna(subset=["effective_patient_id"]).copy()
+    _report_clusters(nn, "Overall (post-merge)")
+
+    if "source_collection" in nn.columns:
+        for cid in sorted(nn["source_collection"].dropna().unique()):
+            sub = nn[nn["source_collection"] == cid]
+            _report_clusters(sub, f"source_collection={cid}")
+
+
+def _report_clusters(df: pd.DataFrame, label: str) -> None:
+    grp = df.groupby("effective_patient_id")
+    is_mal = grp["diagnosis_1"].agg(lambda s: (s == "Malignant").any())
+    sizes = grp.size()
+    mal_idx = is_mal[is_mal].index
+    ben_idx = is_mal[~is_mal].index
+    mal_sizes = sizes.loc[mal_idx]
+    ben_sizes = sizes.loc[ben_idx]
+
+    print(f"  {label}")
+    print(f"    groups (total)             : {len(sizes):,}")
+    print(f"    malignant groups           : {len(mal_idx):,}")
+    print(f"    benign groups              : {len(ben_idx):,}")
+    print(f"    mean size, all             : {sizes.mean():.3f}")
+    if len(mal_sizes):
+        print(f"    mean size, malignant groups: {mal_sizes.mean():.3f}  (median {mal_sizes.median():.1f}, max {int(mal_sizes.max())})")
+    else:
+        print(f"    mean size, malignant groups: n/a")
+    if len(ben_sizes):
+        print(f"    mean size, benign groups   : {ben_sizes.mean():.3f}  (median {ben_sizes.median():.1f}, max {int(ben_sizes.max())})")
+    else:
+        print(f"    mean size, benign groups   : n/a")
+    if len(mal_sizes) and len(ben_sizes) and ben_sizes.mean() > 0:
+        ratio = mal_sizes.mean() / ben_sizes.mean()
+        print(f"    malignant/benign mean ratio: {ratio:.3f}")
+        if ratio < 0.6:
+            print(f"    -> WARN: malignant clusters meaningfully smaller. Protection for")
+            print(f"             malignant cases is weaker than overall mean suggests.")
+        elif ratio > 1.5:
+            print(f"    -> Malignant clusters larger; stronger malignant protection.")
+        else:
+            print(f"    -> Roughly balanced; overall mean reflects malignant grouping fairly.")
+    print()
 
 
 if __name__ == "__main__":
