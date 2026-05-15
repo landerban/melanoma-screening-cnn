@@ -6,6 +6,7 @@ Consumed by app.py (Gradio UI).
 import copy
 import json
 import os
+import random
 import re
 import threading
 import warnings
@@ -264,6 +265,20 @@ class Trainer:
         s   = self.state
         cfg = self.cfg
 
+        # ---- Phase 4d: reproducibility ----
+        # Seeds python.random, numpy, torch (CPU + CUDA), cuDNN. DataLoader
+        # workers and the WeightedRandomSampler get separate generators seeded
+        # below. Run-to-run AUC delta should be < ~0.001 with this in place;
+        # if it's larger, something nondeterministic slipped in.
+        seed = int(cfg.get("seed", 42))
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark     = False
+        s.log_line(f"Seeded with seed={seed} (random, numpy, torch, cuDNN deterministic)")
+
         # ---- Data ----
         s.log_line("Loading and merging metadata CSVs …")
         df = load_and_merge_metadata(self.training_data_dir, self.images_dir)
@@ -315,24 +330,42 @@ class Trainer:
             get_transforms(cfg, "val"),
         )
 
-        nw       = min(4, os.cpu_count() or 1)
+        nw       = min(cfg.get("num_workers", 4), os.cpu_count() or 1)
         use_cuda = torch.cuda.is_available()
+
+        # Phase 4d: per-worker seeding so DataLoader workers are deterministic.
+        # Each worker gets seed + worker_id; numpy and python.random inside
+        # the worker use that.
+        def _worker_init_fn(worker_id: int) -> None:
+            worker_seed = seed + worker_id
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+
+        # Phase 4d: seeded generator for the WeightedRandomSampler so the
+        # train batch composition is reproducible.
+        sampler_gen = torch.Generator()
+        sampler_gen.manual_seed(seed)
+
         train_loader = DataLoader(
             train_ds, batch_size=cfg["batch_size"],
-            sampler=make_weighted_sampler(train_df["label"].tolist()),
+            sampler=make_weighted_sampler(train_df["label"].tolist(), generator=sampler_gen),
             num_workers=nw, pin_memory=use_cuda,
+            worker_init_fn=_worker_init_fn,
         )
         val_loader = DataLoader(
             val_ds, batch_size=cfg["batch_size"],
             shuffle=False, num_workers=nw, pin_memory=use_cuda,
+            worker_init_fn=_worker_init_fn,
         )
         cal_loader = DataLoader(
             cal_ds, batch_size=cfg["batch_size"],
             shuffle=False, num_workers=nw, pin_memory=use_cuda,
+            worker_init_fn=_worker_init_fn,
         )
         test_loader = DataLoader(
             test_ds, batch_size=cfg["batch_size"],
             shuffle=False, num_workers=nw, pin_memory=use_cuda,
+            worker_init_fn=_worker_init_fn,
         )
 
         device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")

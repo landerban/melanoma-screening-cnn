@@ -80,6 +80,10 @@ CFG = {
     "es_patience"       : 7,      # increased — AUC improves more slowly than loss
     "es_delta"          : 5e-4,   # min AUC improvement to reset patience
 
+    # --- Phase 4d: reproducibility ---
+    "seed"              : 42,     # seeds python.random, numpy, torch, cuDNN, DataLoader workers,
+                                  # and WeightedRandomSampler; addresses audit weakness W4.
+
     # --- normalization (ImageNet) ---
     "mean"              : [0.485, 0.456, 0.406],
     "std"               : [0.229, 0.224, 0.225],
@@ -165,10 +169,14 @@ class SkinLesionDataset(Dataset):
         return img, label
 
 
-def make_weighted_sampler(labels: list) -> WeightedRandomSampler:
+def make_weighted_sampler(labels: list, generator: torch.Generator | None = None) -> WeightedRandomSampler:
     """
     Returns a WeightedRandomSampler that up-samples the minority class
     so each batch sees a balanced view — without duplicating the dataset.
+
+    Phase 4d: accepts an optional torch.Generator for reproducible sampling.
+    Trainer._run passes a seeded generator so run-to-run AUC variance is
+    bounded (addresses audit weakness W4).
     """
     labels_t  = torch.tensor(labels)
     n_pos     = labels_t.sum().item()
@@ -178,7 +186,12 @@ def make_weighted_sampler(labels: list) -> WeightedRandomSampler:
     weights   = torch.where(labels_t == 1,
                             torch.tensor(w_pos),
                             torch.tensor(w_neg))
-    return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+    return WeightedRandomSampler(
+        weights,  # type: ignore[arg-type]   # accepts Tensor at runtime; stub says Sequence[float]
+        num_samples=len(weights),
+        replacement=True,
+        generator=generator,
+    )
 
 
 # =============================================================================
