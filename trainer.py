@@ -4,6 +4,7 @@ Consumed by app.py (Gradio UI).
 """
 
 import copy
+import json
 import os
 import re
 import threading
@@ -65,6 +66,7 @@ class TrainingState:
             self.best_val_loss    = float("inf")   # kept for display only
             self.optimal_threshold: float        = 0.5
             self.best_model_path  : str | None  = None
+            self.test_metrics     : dict | None = None  # Phase 4b: held-out test eval
             self.log              : list[str]   = []
             self.error            : str | None  = None
             self.done             = False
@@ -280,8 +282,10 @@ class Trainer:
             "load_and_merge_metadata must produce effective_patient_id (Phase 4a)"
         assert df["effective_patient_id"].notna().all(), \
             f"effective_patient_id has {int(df['effective_patient_id'].isna().sum())} NaN rows"
-        train_df, val_df, _ = patient_level_split(df, patient_col="effective_patient_id")
-        s.log_line(f"Split → train: {len(train_df)}  val: {len(val_df)}")
+        # Phase 4b: capture test_df instead of discarding. The headline AUC
+        # for the slides comes from test, not val.
+        train_df, val_df, test_df = patient_level_split(df, patient_col="effective_patient_id")
+        s.log_line(f"Split → train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
 
         train_ds = SkinLesionDataset(
             train_df["image_path"].tolist(),
@@ -291,6 +295,11 @@ class Trainer:
         val_ds = SkinLesionDataset(
             val_df["image_path"].tolist(),
             val_df["label"].tolist(),
+            get_transforms(cfg, "val"),
+        )
+        test_ds = SkinLesionDataset(
+            test_df["image_path"].tolist(),
+            test_df["label"].tolist(),
             get_transforms(cfg, "val"),
         )
 
@@ -303,6 +312,10 @@ class Trainer:
         )
         val_loader = DataLoader(
             val_ds, batch_size=cfg["batch_size"],
+            shuffle=False, num_workers=nw, pin_memory=use_cuda,
+        )
+        test_loader = DataLoader(
+            test_ds, batch_size=cfg["batch_size"],
             shuffle=False, num_workers=nw, pin_memory=use_cuda,
         )
 
@@ -421,9 +434,37 @@ class Trainer:
         s.optimal_threshold = opt_thresh
         s.log_line(f"Optimal threshold (recall≥0.80, max specificity): {opt_thresh:.3f}")
 
+        # ---- Phase 4b: held-out test evaluation at the calibrated threshold ----
+        # The headline AUC for the midterm comes from this number, not val.
+        s.log_line("─" * 50)
+        s.log_line(f"Held-out test evaluation at threshold {opt_thresh:.3f} …")
+        test_loss, test_m = self._val_ep(model, test_loader, criterion, device, threshold=opt_thresh)
+        test_m["loss"]      = float(test_loss)
+        test_m["threshold"] = float(opt_thresh)
+        test_m["n_pos"]     = int(test_m.get("tp", 0) + test_m.get("fn", 0))
+        test_m["n_neg"]     = int(test_m.get("tn", 0) + test_m.get("fp", 0))
+        s.test_metrics      = test_m
+        s.log_line(
+            f"  TEST  AUC={test_m['auc']:.4f}  PR-AUC={test_m['pr_auc']:.4f}  "
+            f"recall={test_m['recall']:.3f}  spec={test_m['specificity']:.3f}  "
+            f"F1={test_m['f1']:.3f}"
+        )
+        s.log_line(
+            f"  TEST  CM: TN={test_m['tn']} FP={test_m['fp']} "
+            f"FN={test_m['fn']} TP={test_m['tp']}  (n_pos={test_m['n_pos']}, n_neg={test_m['n_neg']})"
+        )
+
+        # Persist test metrics alongside the checkpoint. Phase 4e folds these
+        # into the checkpoint dict; until then a sidecar JSON is the source of truth.
+        test_metrics_path = Path(self.CKPT).with_suffix(".test_metrics.json")
+        serializable = {k: (float(v) if hasattr(v, "item") else v) for k, v in test_m.items()}
+        with open(test_metrics_path, "w") as f:
+            json.dump(serializable, f, indent=2)
+        s.log_line(f"Saved test metrics to {test_metrics_path}")
+
         s.running = False
         s.done    = True
-        s.log_line(f"Training complete!  Best AUC: {best_auc:.4f}  Best val loss: {s.best_val_loss:.4f}")
+        s.log_line(f"Training complete!  Best val AUC: {best_auc:.4f}  Test AUC: {test_m['auc']:.4f}")
 
     # ------------------------------------------------------------------
 
@@ -454,7 +495,14 @@ class Trainer:
         return total / len(loader.dataset)
 
     @torch.no_grad()
-    def _val_ep(self, model, loader, criterion, device):
+    def _val_ep(self, model, loader, criterion, device, threshold: float = 0.5):
+        """
+        Phase 4b: threshold parameterized so the held-out test eval can use
+        the calibrated operating threshold from _sweep_threshold, not 0.5.
+        Phase 4f changes the per-epoch threshold to a dynamic mini-sweep;
+        the default 0.5 is kept for backward compatibility with any callers
+        that haven't migrated.
+        """
         model.eval()
         total      = 0.0
         all_probs  = []
@@ -469,7 +517,7 @@ class Trainer:
 
         probs  = torch.cat(all_probs).numpy()
         labels = torch.cat(all_labels).numpy().astype(int)
-        preds  = (probs >= 0.5).astype(int)
+        preds  = (probs >= threshold).astype(int)
 
         try:
             auc    = roc_auc_score(labels, probs)
