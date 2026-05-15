@@ -1,0 +1,45 @@
+Scanning 3 CSV(s) under /home/elicer/AI_project/training_data
+
+PER-CSV REPORT
+------------------------------------------------------------------------------
+  metadata_c212.csv
+    rows                : 11,720
+    has patient_id      : False
+    patient_id NaN rate : 1.000   <- all-NaN; patient_level_split will collapse to one bucket
+    has diagnosis_1     : True
+    diagnosis_1 top-6   : [('Benign', 9415), ('Malignant', 2156), ('Indeterminate', 149)]
+    isic_id duplicates within file: 0
+
+  metadata_c70.csv
+    rows                : 33,126
+    has patient_id      : True
+    patient_id NaN rate : 0.000
+    has diagnosis_1     : True
+    diagnosis_1 top-6   : [('Benign', 32539), ('Malignant', 584), ('Indeterminate', 3)]
+    isic_id duplicates within file: 0
+
+  metadata_c249.csv
+    rows                : 18,946
+    has patient_id      : False
+    patient_id NaN rate : 1.000   <- all-NaN; patient_level_split will collapse to one bucket
+    has diagnosis_1     : True
+    diagnosis_1 top-6   : [('Malignant', 8871), ('Benign', 7831), (nan, 1156), ('Indeterminate', 1088)]
+    isic_id duplicates within file: 0
+
+CROSS-CSV REPORT
+------------------------------------------------------------------------------
+  isic_ids appearing in >1 CSV : 0
+  ...of which have CONFLICTING diagnosis_1 between CSVs : 0
+
+POST-MERGE REPORT (mimics trainer.load_and_merge_metadata)
+------------------------------------------------------------------------------
+  rows after concat+dedup+label filter : 61,396
+
+  FAILURE MODE A: 28,273 rows (46.05% of merged set)
+    have NaN patient_id and would all be bucketed into ONE synthetic
+    NaN-patient by np.unique() at efficientnet_b0.py:218.
+    Those rows land entirely in train OR val OR test depending on shuffle order.
+
+  unique patient_ids (incl. NaN) : 2,057
+  unique patient_ids (excl. NaN) : 2,056
+  mean images per patient        : 29.86

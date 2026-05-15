@@ -1,0 +1,12 @@
+Downloading: "https://download.pytorch.org/models/efficientnet_b0_rwightman-7f5810bc.pth" to /home/elicer/.cache/torch/hub/checkpoints/efficientnet_b0_rwightman-7f5810bc.pth
+Loading best_model.pth and running over val split ...
+Split  →  train: 50723 imgs (1441 patients) | val: 5168 imgs (308 patients) | test: 5505 imgs (308 patients)
+  0%|          | 0.00/20.5M [00:00<?, ?B/s] 68%|██████▊   | 14.0M/20.5M [00:00<00:00, 147MB/s]100%|██████████| 20.5M/20.5M [00:00<00:00, 170MB/s]
+Val cohort: 5,168 images  |  pos=79  neg=5089
+
+ROC-AUC = 0.6243  [95% CI: 0.5561, 0.6866]  (1000 bootstrap resamples, seed=42)
+
+At threshold 0.347:
+  recall      = 0.899  (71/79)
+  specificity = 0.204  (1040/5089)
+  confusion matrix:  TN=1040  FP=4049  FN=8  TP=71

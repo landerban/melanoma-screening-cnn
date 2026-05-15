@@ -1,0 +1,11 @@
+[212] HAM10000         -> metadata_c212.csv
+        wrote 11,720 rows (2190.6 KB)
+[ 70] SIIM-ISIC-2020   -> metadata_c70.csv
+        wrote 33,126 rows (7961.8 KB)
+[249] BCN20000         -> metadata_c249.csv
+        wrote 18,946 rows (3738.9 KB)
+
+Removed race-loser training_data/images/metadata.csv (7961.8 KB) -- per-collection CSVs supersede it.
+
+Total metadata rows across collections: 63,792
+Done.
