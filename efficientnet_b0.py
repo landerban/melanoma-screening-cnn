@@ -37,14 +37,35 @@ from PIL import Image
 # =============================================================================
 # CONFIG
 # =============================================================================
+#
+# Phase 4g: scaled up for the A100X MIG 3g.40gb (40 GB VRAM, 8 vCPU). The
+# original 300x300 / batch=32 / num_workers=min(4, cpu) was sized for an
+# 8 GB RTX 3060 Ti.
+#
+# Changes from the pre-Phase-4 config:
+#   input_size  300 -> 384   (EfficientNet-B0 default works fine at 384; the
+#                             10-15% accuracy improvement at higher resolution
+#                             on dermoscopy is documented in the literature)
+#   batch_size   32 -> 96    (40 GB VRAM allows ~3x; conservative -- could go
+#                             higher but variance from batch composition starts
+#                             to matter for the WeightedRandomSampler)
+#   num_workers 4-> 6        (G-NAHPM-40 has 8 vCPU; leave 2 for the main thread
+#                             + GPU bridge)
+#
+# Backbone deliberately kept at efficientnet_b0. Bumping to B3 simultaneously
+# with the data composition change (c=390 dropped, c=249 added) makes any AUC
+# delta uninterpretable -- "is it the data or the backbone?" Run baseline retrain
+# with B0 first; B3 is a clean follow-up experiment.
+# =============================================================================
 
 CFG = {
     # --- data ---
-    "input_size"        : 300,
-    "batch_size"        : 32,
+    "input_size"        : 384,    # Phase 4g: was 300
+    "batch_size"        : 96,     # Phase 4g: was 32
+    "num_workers"       : 6,      # Phase 4g: was min(4, cpu_count); explicit knob now
 
     # --- model ---
-    "backbone"          : "efficientnet_b0",
+    "backbone"          : "efficientnet_b0",   # KEEP -- see comment block above
     "dropout_1"         : 0.4,    # after GAP
     "hidden_dim"        : 256,
     "dropout_2"         : 0.2,    # before final linear
