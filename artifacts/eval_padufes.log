@@ -1,0 +1,33 @@
+ckpt    : best_model.pth
+device  : cuda
+threshold (from ckpt, calibrated on dermoscopy cal cohort): 0.6612
+
+PAD-UFES-20 raw metadata: 2,298 rows
+  diagnosis_1 distribution: {'Malignant': 1089, 'Indeterminate': 730, 'Benign': 479}
+  image_type distribution: {'clinical: close-up': 2298}
+PAD-UFES-20 eval cohort  : 1,568 images  (pos=1089 / neg=479)
+
+PAD-UFES-20 EVAL RESULT
+==============================================================================
+  N images       : 1,568
+  prevalence     : 69.5%  (pos=1089 / neg=479)
+
+  ROC-AUC        : 0.8055
+  PR-AUC         : 0.8953    (random baseline at this prevalence = 0.695)
+  PR-AUC lift    : 1.29x random
+
+  At in-distribution threshold 0.661:
+    recall       : 0.514  (560/1089)
+    specificity  : 0.887  (425/479)
+    F1           : 0.658
+    CM           : TN=425 FP=54 FN=529 TP=560
+
+Interpretation guide:
+  - AUC >= 0.80: meaningful transfer; framing-aid Eigen-CAM hypothesis
+                 (live heatmap localizes lesion on phone camera) is
+                 supported by the discriminative-quality result.
+  - 0.65 <= AUC < 0.80: partial transfer; model picks up SOME signal
+                 on clinical close-ups but the in-distribution threshold
+                 is miscalibrated for this distribution.
+  - AUC < 0.65: collapse on OOD; modality shortcut dominates the
+                 in-distribution result. Disclose on slide.
