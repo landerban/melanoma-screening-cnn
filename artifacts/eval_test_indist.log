@@ -1,0 +1,28 @@
+ckpt    : best_model.pth
+device  : cuda
+threshold (from ckpt): 0.6612
+
+Split  →  train: 39647 imgs (10115 patients) | val: 6634 imgs (1555 patients) | cal: 5929 imgs (1555 patients) | test: 9186 imgs (2333 patients)
+Test cohort: 9,186 images  (pos=1767 / neg=7419)
+
+RE-RUN TEST EVAL (from saved checkpoint)
+==============================================================================
+  AUC          : 0.9513
+  PR-AUC       : 0.8353
+  recall       : 0.835  (1475/1767)
+  specificity  : 0.914  (6784/7419)
+  F1           : 0.761
+  CM           : TN=6784 FP=635 FN=292 TP=1475
+
+COMPARE vs frozen test_metrics stored in ckpt dict:
+==============================================================================
+  auc           : computed=0.951339  frozen=0.951339  diff=0.00e+00  [OK]
+  pr_auc        : computed=0.835257  frozen=0.835257  diff=0.00e+00  [OK]
+  recall        : computed=0.834748  frozen=0.834748  diff=0.00e+00  [OK]
+  specificity   : computed=0.914409  frozen=0.914409  diff=0.00e+00  [OK]
+  tn            : computed=6784  frozen=6784  [OK]
+  fp            : computed=635  frozen=635  [OK]
+  fn            : computed=292  frozen=292  [OK]
+  tp            : computed=1475  frozen=1475  [OK]
+
+  All metrics match within tolerance. Checkpoint round-trip is honest.
