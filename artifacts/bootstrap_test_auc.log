@@ -1,0 +1,30 @@
+ckpt    : best_model.pth
+device  : cuda
+threshold (from ckpt): 0.6612
+N_BOOT  : 1000
+seed    : 42
+
+Split  →  train: 39647 imgs (10115 patients) | val: 6634 imgs (1555 patients) | cal: 5929 imgs (1555 patients) | test: 9186 imgs (2333 patients)
+Test cohort: 9,186 images  (pos=1767 / neg=7419)
+  by source: {'70': 4944, '249': 2534, '212': 1708}
+
+AGGREGATE TEST  (bootstrap N=1000, seed=42)
+==============================================================================
+  N images        : 9,186
+  prevalence      : 1,767/9,186 (19.2%)
+  ROC-AUC         : 0.9513  [95% CI: 0.9465, 0.9563]  half-width 0.0049
+  PR-AUC          : 0.8353
+  recall (@0.661): 0.835  (1475/1767)
+  specificity     : 0.914  (6784/7419)
+  CM              : TN=6784 FP=635 FN=292 TP=1475
+
+PER-COLLECTION  (bootstrap N=1000, seed=42)
+==============================================================================
+  c=212  : N=1,708  pos= 305 (17.9%)  AUC=0.9151  [95% CI: 0.8980, 0.9323]  half-width 0.0172
+  c=249  : N=2,534  pos=1,376 (54.3%)  AUC=0.8702  [95% CI: 0.8555, 0.8842]  half-width 0.0144
+  c=70   : N=4,944  pos=  86 ( 1.7%)  AUC=0.8835  [95% CI: 0.8545, 0.9100]  half-width 0.0278
+
+Use the aggregate CI for the slide-7 headline. The per-collection CIs
+show whether the 0.87-0.92 within-collection range is statistically
+stable -- non-overlapping CIs indicate genuinely different per-collection
+quality; overlapping CIs say the apparent spread is within noise.
