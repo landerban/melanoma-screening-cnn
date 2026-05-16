@@ -69,7 +69,7 @@ class TrainingState:
             self.best_val_loss    = float("inf")   # kept for display only
             self.optimal_threshold: float        = 0.5
             self.best_model_path  : str | None  = None
-            self.test_metrics     : dict | None = None  # Phase 4b: held-out test eval
+            self.test_metrics     : dict | None = None  # held-out test eval result
             self.log              : list[str]   = []
             self.error            : str | None  = None
             self.done             = False
@@ -130,7 +130,7 @@ class GradCAM:
 
 
 # ---------------------------------------------------------------------------
-# Checkpoint format (Phase 4e)
+# Checkpoint format
 # ---------------------------------------------------------------------------
 
 def _git_hash() -> str:
@@ -147,10 +147,10 @@ def build_ckpt_dict(state_dict, cfg, best_auc: float, best_epoch: int,
                     optimal_threshold: float | None = None,
                     test_metrics: dict | None = None) -> dict:
     """
-    Phase 4e: rich checkpoint format. Embeds enough metadata that a freshly
-    loaded `best_model.pth` can identify itself -- which cfg trained it, which
-    git commit, val/test metrics, calibrated threshold. Addresses audit H5
-    ("which checkpoint is this?" reproduction risk).
+    Rich checkpoint format. Embeds enough metadata that a freshly loaded
+    `best_model.pth` can identify itself: which cfg trained it, which git
+    commit, val/test metrics, calibrated threshold, timestamp, torch
+    version.
     """
     return {
         "state_dict"        : state_dict,
@@ -179,15 +179,15 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
         isic_id, patient_id (optional), lesion_id (optional), diagnosis_1,
         source_collection, effective_patient_id, label, image_path.
 
-    Phase 4a additions:
+    Two derived columns:
       * source_collection -- parsed from each CSV's filename
-        (`metadata_c<id>.csv` -> `<id>`). Used downstream for the per-collection
-        AUC breakdown (audit W8) and modality-shortcut analysis.
+        (`metadata_c<id>.csv` -> `<id>`). Used downstream for the
+        per-collection AUC breakdown and modality-shortcut analysis.
       * effective_patient_id -- patient_id || lesion_id || isic_id fallback
-        chain. Built BEFORE drop_duplicates so each row's grouping is fixed at
-        ingest. Guaranteed non-NaN; Trainer._run asserts. See
-        docs/diagnostic_findings.md for the per-collection grouping breakdown
-        that justifies this fallback chain.
+        chain. Built BEFORE drop_duplicates so each row's grouping is fixed
+        at ingest. Guaranteed non-NaN; Trainer._run asserts this. See
+        docs/diagnostic_findings.md for the per-collection grouping
+        breakdown that justifies this fallback chain.
     """
 
     # Scan training_data/ and any immediate subdirectories (e.g. images/)
@@ -201,9 +201,10 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
     for p in csvs:
         try:
             df = pd.read_csv(p, low_memory=False)
-            # Phase 4a (W8): tag source_collection from filename. Per-collection
-            # AUC breakdown in Phase 7c needs this; it also lets us track which
-            # rows came from which collection through the merge.
+            # Tag source_collection from the CSV's filename. Downstream
+            # per-collection AUC breakdown depends on this; it also lets
+            # us track which rows came from which collection through the
+            # merge.
             m = collection_re.search(p.name)
             df["source_collection"] = m.group(1) if m else None
             frames.append(df)
@@ -212,7 +213,7 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Phase 4a: build effective_patient_id via patient_id || lesion_id || isic_id.
+    # Build effective_patient_id via patient_id || lesion_id || isic_id.
     # Done BEFORE drop_duplicates so each row's grouping is fixed at ingest.
     if "patient_id" in combined.columns:
         eff = combined["patient_id"].copy()
@@ -259,14 +260,14 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
 
 
 # ---------------------------------------------------------------------------
-# Phase 4f: dynamic threshold mini-sweep used by _val_ep per epoch
+# Dynamic threshold mini-sweep used by _val_ep per epoch
 # ---------------------------------------------------------------------------
 
 def _mini_threshold_sweep(labels: np.ndarray, probs: np.ndarray) -> float:
     """
     Per-epoch threshold selection on the same val cohort the loop is
     monitoring. NOT the headline operating threshold -- that's selected
-    once at the end by Trainer._sweep_threshold on the cal cohort (Phase 4c).
+    once at the end by Trainer._sweep_threshold on the held-out cal cohort.
     The per-epoch threshold exists so the training plot reports recall /
     specificity / F1 at a sensible operating point rather than at 0.5,
     which produces misleading curves at this class imbalance.
@@ -333,20 +334,19 @@ class Trainer:
 
     def _run(self):
         """
-        Two-stage training loop with audit-fixed methodology. The four hard
-        constraints from CLAUDE.md, restated:
+        Two-stage training loop. The four load-bearing methodology choices
+        (see CLAUDE.md hard constraints for the full statement):
 
-        1. Patient-level split via effective_patient_id (4a). NaN-bucket leak
+        1. Patient-level split via effective_patient_id. NaN-bucket leak
            is gone; image-level fallback is gone.
         2. Focal loss alpha=0.85 (NOT 0.25). alpha weights positives in this
            implementation; high alpha for the rare malignant class.
-        3. Early stopping monitors AUC, not val loss. See the §6 vs §8 framing
-           below for the correct rationale -- the previous "val loss falls
-           while recall@0.5 falls" story was misleading.
-        4. Threshold sweep runs on the CAL cohort (4c), not val. Calibration
-           is therefore independent of the cohort that drove ES.
+        3. Early stopping monitors AUC, not val loss. See the framing below
+           for the rationale.
+        4. Threshold sweep runs on the CAL cohort, not val. Calibration is
+           therefore independent of the cohort that drove ES.
 
-        Phase 4h: §6 vs §8 framing -- the correct story for the ES-on-AUC slide.
+        ES-on-AUC rationale (the locked framing -- do not paraphrase):
 
         Val loss at heavy class imbalance is dominated by the benign majority.
         A model can reduce val loss by tightening benign confidence variance
@@ -358,20 +358,23 @@ class Trainer:
         The recall-at-threshold=0.5 drop sometimes seen across stage-2 epochs
         is a confidence-calibration shift (more positive probs crossing the
         0.5 line strongly enough to flip), NOT a separation degradation. The
-        per-epoch dynamic threshold (Phase 4f) keeps the reported recall /
-        specificity / F1 curves comparable across epochs; the static-0.5
-        framing in the old training plot was misleading.
+        per-epoch dynamic threshold (see _mini_threshold_sweep) keeps the
+        reported recall / specificity / F1 curves comparable across epochs;
+        a static-0.5 framing would be misleading.
 
-        Headline numbers (Phase 4b + 4e):
-          * val AUC at the best-AUC epoch is reported but is NOT the headline.
-          * The threshold sweep on cal (4c) picks the operating threshold.
-          * The test eval (4b) at that threshold produces the slide-ready
-            recall / spec / CM. The checkpoint dict (4e) embeds all of this.
+        Headline numbers flow:
+          * val AUC at the best-AUC epoch drives ES + checkpoint save, but
+            is NOT the headline number.
+          * The threshold sweep on the held-out cal cohort picks the
+            operating threshold.
+          * The test eval at that threshold produces the slide-ready
+            recall / specificity / CM. The checkpoint dict embeds all of
+            this for downstream verification.
         """
         s   = self.state
         cfg = self.cfg
 
-        # ---- Phase 4d: reproducibility ----
+        # ---- Reproducibility ----
         # Seeds python.random, numpy, torch (CPU + CUDA), cuDNN. DataLoader
         # workers and the WeightedRandomSampler get separate generators seeded
         # below. Run-to-run AUC delta should be < ~0.001 with this in place;
@@ -396,17 +399,16 @@ class Trainer:
         if n_pos == 0:
             raise RuntimeError("No malignant images found on disk — check images_dir.")
 
-        # Phase 4a: explicit effective_patient_id key; no silent isic_id fallback.
+        # Explicit effective_patient_id key; no silent isic_id fallback.
         # load_and_merge_metadata guarantees effective_patient_id is non-NaN;
-        # patient_level_split also re-validates and will hard-fail if violated.
+        # patient_level_split also re-validates and hard-fails if violated.
         assert "effective_patient_id" in df.columns, \
-            "load_and_merge_metadata must produce effective_patient_id (Phase 4a)"
+            "load_and_merge_metadata must produce effective_patient_id"
         assert df["effective_patient_id"].notna().all(), \
             f"effective_patient_id has {int(df['effective_patient_id'].isna().sum())} NaN rows"
-        # Phase 4c: four-way split. cal_df owns the threshold sweep so the
-        # operating threshold isn't selected on the same cohort that drove ES
-        # and best-epoch selection (audit weakness W1). test_df is the
-        # held-out headline cohort (W2).
+        # Four-way split: cal_df owns the threshold sweep so the operating
+        # threshold isn't selected on the same cohort that drove ES and
+        # best-epoch selection. test_df is the held-out headline cohort.
         train_df, val_df, cal_df, test_df = patient_level_split(
             df, patient_col="effective_patient_id"
         )
@@ -439,7 +441,7 @@ class Trainer:
         nw       = min(cfg.get("num_workers", 4), os.cpu_count() or 1)
         use_cuda = torch.cuda.is_available()
 
-        # Phase 4d: per-worker seeding so DataLoader workers are deterministic.
+        # Per-worker seeding so DataLoader workers are deterministic.
         # Each worker gets seed + worker_id; numpy and python.random inside
         # the worker use that.
         def _worker_init_fn(worker_id: int) -> None:
@@ -447,8 +449,8 @@ class Trainer:
             np.random.seed(worker_seed)
             random.seed(worker_seed)
 
-        # Phase 4d: seeded generator for the WeightedRandomSampler so the
-        # train batch composition is reproducible.
+        # Seeded generator for the WeightedRandomSampler so the train
+        # batch composition is reproducible run-to-run.
         sampler_gen = torch.Generator()
         sampler_gen.manual_seed(seed)
 
@@ -535,8 +537,8 @@ class Trainer:
         es_counter       = 0
         best_auc         = 0.0
         best_weights     = None
-        best_epoch       = 0          # Phase 4e: track for ckpt dict
-        best_val_metrics = None       # Phase 4e: val metrics at best epoch
+        best_epoch       = 0          # tracked for the ckpt dict metadata
+        best_val_metrics = None       # val metrics at the best-AUC epoch
 
         for ep in range(1, cfg["stage2_epochs"] + 1):
             if s.stop_requested:
@@ -564,8 +566,8 @@ class Trainer:
                 best_val_metrics["loss"] = float(vl)
                 es_counter       = 0
                 best_weights     = copy.deepcopy(model.state_dict())
-                # Phase 4e: save as rich dict. optimal_threshold + test_metrics
-                # are filled in by the final save after threshold sweep + test eval.
+                # Save as rich dict. optimal_threshold + test_metrics are
+                # filled in by the final save after threshold sweep + test eval.
                 ckpt = build_ckpt_dict(
                     best_weights, cfg, best_auc, best_epoch,
                     val_metrics=best_val_metrics,
@@ -599,16 +601,16 @@ class Trainer:
         if best_weights:
             model.load_state_dict(best_weights)
 
-        # ---- Phase 4c: threshold sweep on the held-out CAL set (not val) ----
-        # The cal cohort was never touched during training or early stopping,
-        # so the resulting threshold is honest -- this addresses audit W1.
+        # ---- Threshold sweep on the held-out CAL set (not val) ----
+        # The cal cohort was never touched during training or early
+        # stopping, so the resulting threshold is honest.
         s.log_line("─" * 50)
         s.log_line("Threshold sweep on held-out cal set …")
         opt_thresh = self._sweep_threshold(model, cal_loader, device)
         s.optimal_threshold = opt_thresh
         s.log_line(f"Optimal threshold (recall≥0.80, max specificity): {opt_thresh:.3f}")
 
-        # ---- Phase 4b: held-out test evaluation at the calibrated threshold ----
+        # ---- Held-out test evaluation at the calibrated threshold ----
         # The headline AUC for the midterm comes from this number, not val.
         s.log_line("─" * 50)
         s.log_line(f"Held-out test evaluation at threshold {opt_thresh:.3f} …")
@@ -628,15 +630,16 @@ class Trainer:
             f"FN={test_m['fn']} TP={test_m['tp']}  (n_pos={test_m['n_pos']}, n_neg={test_m['n_neg']})"
         )
 
-        # Phase 4b: keep the sidecar JSON for human readability.
+        # Sidecar JSON for human readability; the same numbers also live
+        # inside the rich checkpoint dict saved below.
         test_metrics_path = Path(self.CKPT).with_suffix(".test_metrics.json")
         serializable = {k: (float(v) if hasattr(v, "item") else v) for k, v in test_m.items()}
         with open(test_metrics_path, "w") as f:
             json.dump(serializable, f, indent=2)
         s.log_line(f"Saved test metrics to {test_metrics_path}")
 
-        # Phase 4e: final save with optimal_threshold + test_metrics populated.
-        # This overwrites the mid-training partial save with the complete dict.
+        # Final save with optimal_threshold + test_metrics populated.
+        # Overwrites the mid-training partial save with the complete dict.
         if best_weights is not None:
             final_ckpt = build_ckpt_dict(
                 best_weights, cfg, best_auc, best_epoch,
@@ -682,20 +685,20 @@ class Trainer:
     @torch.no_grad()
     def _val_ep(self, model, loader, criterion, device, threshold: float | None = None):
         """
-        Phase 4f: when `threshold` is None (per-epoch case), run a mini-sweep
-        and report metrics at the recall>=0.80 / max-specificity threshold
-        found on this loader's predictions. This replaces the prior fixed
-        threshold=0.5 which produced the misleading "recall declining over
-        epochs" curve in the training plot (the model was just becoming
-        more confident, not worse at malignant detection).
+        When `threshold` is None (per-epoch case), run a mini-sweep and
+        report metrics at the recall>=0.80 / max-specificity threshold
+        found on this loader's predictions. A fixed threshold=0.5 would
+        produce a misleading "recall declining over epochs" curve at
+        heavy class imbalance -- the model is becoming more confident,
+        not worse at malignant detection.
 
         When `threshold` is a float (e.g. test eval after the cal sweep),
         use it directly so the test recall/spec are measured at the
         calibrated operating point.
 
-        Returns: (loss, metrics_dict). metrics_dict includes the
-        per-epoch threshold under key "threshold_dyn" so the plot can
-        label the curves appropriately.
+        Returns: (loss, metrics_dict). metrics_dict includes the per-epoch
+        threshold under key "threshold_dyn" so the plot can label curves
+        appropriately.
         """
         model.eval()
         total      = 0.0
@@ -718,7 +721,7 @@ class Trainer:
         except ValueError:
             auc = pr_auc = float("nan")
 
-        # Phase 4f: dynamic per-epoch threshold when caller passed None.
+        # Dynamic per-epoch threshold when caller passed None.
         if threshold is None:
             t_used = _mini_threshold_sweep(labels, probs)
         else:

@@ -38,31 +38,31 @@ from PIL import Image
 # CONFIG
 # =============================================================================
 #
-# Phase 4g: scaled up for the A100X MIG 3g.40gb (40 GB VRAM, 8 vCPU). The
-# original 300x300 / batch=32 / num_workers=min(4, cpu) was sized for an
+# Sized for the A100X MIG 3g.40gb (40 GB VRAM, 8 vCPU). The original
+# 300x300 / batch=32 / num_workers=min(4, cpu_count) was sized for an
 # 8 GB RTX 3060 Ti.
 #
-# Changes from the pre-Phase-4 config:
-#   input_size  300 -> 384   (EfficientNet-B0 default works fine at 384; the
-#                             10-15% accuracy improvement at higher resolution
-#                             on dermoscopy is documented in the literature)
-#   batch_size   32 -> 96    (40 GB VRAM allows ~3x; conservative -- could go
-#                             higher but variance from batch composition starts
-#                             to matter for the WeightedRandomSampler)
-#   num_workers 4-> 6        (G-NAHPM-40 has 8 vCPU; leave 2 for the main thread
-#                             + GPU bridge)
+# Configuration rationale:
+#   input_size  = 384  (EfficientNet-B0 default works fine at 384; the
+#                       10-15% accuracy improvement at higher resolution
+#                       on dermoscopy is documented in the literature)
+#   batch_size  = 96   (40 GB VRAM allows ~3x; conservative -- could go
+#                       higher but variance from batch composition starts
+#                       to matter for the WeightedRandomSampler)
+#   num_workers = 6    (G-NAHPM-40 has 8 vCPU; leave 2 for the main thread
+#                       + GPU bridge)
 #
 # Backbone deliberately kept at efficientnet_b0. Bumping to B3 simultaneously
-# with the data composition change (c=390 dropped, c=249 added) makes any AUC
-# delta uninterpretable -- "is it the data or the backbone?" Run baseline retrain
-# with B0 first; B3 is a clean follow-up experiment.
+# with a data composition change makes any AUC delta uninterpretable -- "is
+# it the data or the backbone?" B3 is a clean follow-up experiment with one
+# variable changed.
 # =============================================================================
 
 CFG = {
     # --- data ---
-    "input_size"        : 384,    # Phase 4g: was 300
-    "batch_size"        : 96,     # Phase 4g: was 32
-    "num_workers"       : 6,      # Phase 4g: was min(4, cpu_count); explicit knob now
+    "input_size"        : 384,
+    "batch_size"        : 96,
+    "num_workers"       : 6,
 
     # --- model ---
     "backbone"          : "efficientnet_b0",   # KEEP -- see comment block above
@@ -101,9 +101,9 @@ CFG = {
     "es_patience"       : 7,      # increased — AUC improves more slowly than loss
     "es_delta"          : 5e-4,   # min AUC improvement to reset patience
 
-    # --- Phase 4d: reproducibility ---
+    # --- reproducibility ---
     "seed"              : 42,     # seeds python.random, numpy, torch, cuDNN, DataLoader workers,
-                                  # and WeightedRandomSampler; addresses audit weakness W4.
+                                  # and WeightedRandomSampler.
 
     # --- normalization (ImageNet) ---
     "mean"              : [0.485, 0.456, 0.406],
@@ -195,9 +195,9 @@ def make_weighted_sampler(labels: list, generator: torch.Generator | None = None
     Returns a WeightedRandomSampler that up-samples the minority class
     so each batch sees a balanced view — without duplicating the dataset.
 
-    Phase 4d: accepts an optional torch.Generator for reproducible sampling.
+    Accepts an optional torch.Generator for reproducible sampling.
     Trainer._run passes a seeded generator so run-to-run AUC variance is
-    bounded (addresses audit weakness W4).
+    bounded by the seed rather than the sampler's internal state.
     """
     labels_t  = torch.tensor(labels)
     n_pos     = labels_t.sum().item()
@@ -229,11 +229,10 @@ def patient_level_split(
     seed: int         = 42,
 ):
     """
-    Split a DataFrame at the PATIENT level to prevent leakage. Phase 4c
-    extended this to a four-way train/val/cal/test split so the threshold
-    sweep can run on a held-out cal cohort (addresses audit weakness W1:
-    previously the threshold was calibrated on the same val set that drove
-    early stopping and best-epoch selection).
+    Split a DataFrame at the PATIENT level to prevent leakage. Four-way
+    train/val/cal/test split so the threshold sweep runs on a held-out
+    cal cohort, independent of the cohort that drove early stopping and
+    best-epoch selection.
 
     Default fractions: train=0.65, val=0.10, cal=0.10, test=0.15.
 
@@ -243,12 +242,12 @@ def patient_level_split(
                       AND have no NaN rows. Callers should pass
                       "effective_patient_id", which `trainer.load_and_merge_metadata`
                       builds via the patient_id || lesion_id || isic_id fallback chain.
-                      Phase 4a removed the prior silent fallback to `isic_id` when
-                      `patient_col` was missing -- that was an image-level random
-                      split disguised as patient-level (CLAUDE.md hard constraint #1).
+                      This function hard-fails on missing column or NaN values
+                      rather than silently falling back to `isic_id` (which would
+                      be an image-level random split disguised as patient-level).
         label_col   : column holding the binary label (0/1)
         val_frac    : fraction of patients for validation (used by stage-2 ES)
-        cal_frac    : fraction of patients for threshold calibration (Phase 4c).
+        cal_frac    : fraction of patients for threshold calibration.
                       _sweep_threshold consumes this cohort, NOT val.
         test_frac   : fraction of patients for test (the headline-number cohort)
         seed        : random seed
@@ -265,8 +264,8 @@ def patient_level_split(
     """
     import pandas as pd
 
-    # Phase 4a: refuse silent fallback to isic_id. If the caller didn't build a
-    # clean effective_patient_id, fail loudly here rather than producing an
+    # Refuse silent fallback to isic_id. If the caller didn't build a clean
+    # effective_patient_id, fail loudly here rather than producing an
     # image-level split disguised as patient-level.
     if patient_col not in df.columns:
         raise ValueError(

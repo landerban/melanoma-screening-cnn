@@ -194,10 +194,11 @@ def cb_stop():
 
 def _load_ckpt_state_dict(ckpt_path: str, device):
     """
-    Phase 4e: load both rich-dict and legacy-bare-state-dict checkpoints.
-    Rich format (Phase 4e onward) is a dict with at least a "state_dict" key
-    plus metadata (cfg, optimal_threshold, val_metrics, test_metrics, git_hash,
-    etc.). Legacy format is a flat state_dict. We trust our own ckpts so
+    Load both rich-dict and legacy-bare-state-dict checkpoints.
+
+    Rich format is a dict with at least a "state_dict" key plus metadata
+    (cfg, optimal_threshold, val_metrics, test_metrics, git_hash, etc.).
+    Legacy format is a flat state_dict. We trust our own ckpts so
     weights_only=False is acceptable; raise if neither format matches.
     """
     obj = torch.load(ckpt_path, map_location=device, weights_only=False)
@@ -208,11 +209,11 @@ def _load_ckpt_state_dict(ckpt_path: str, device):
         return obj
     raise RuntimeError(
         f"Unrecognized checkpoint format at {ckpt_path}. Expected a dict with "
-        f"'state_dict' (Phase 4e+) or a bare state_dict (legacy)."
+        f"'state_dict' (rich format) or a bare state_dict (legacy)."
     )
 
 
-# Phase 4i: cache the constructed model + GradCAM hook per checkpoint path.
+# Cache the constructed model + GradCAM hook per checkpoint path.
 # Without this, every click on "Run Prediction" reloads ~17 MB of weights from
 # disk and re-installs GradCAM hooks -- a measurable latency hit on the UI.
 # Cache key includes the ckpt's mtime so users editing the same path get
