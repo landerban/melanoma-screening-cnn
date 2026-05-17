@@ -37,14 +37,35 @@ from PIL import Image
 # =============================================================================
 # CONFIG
 # =============================================================================
+#
+# Sized for the A100X MIG 3g.40gb (40 GB VRAM, 8 vCPU). The original
+# 300x300 / batch=32 / num_workers=min(4, cpu_count) was sized for an
+# 8 GB RTX 3060 Ti.
+#
+# Configuration rationale:
+#   input_size  = 384  (EfficientNet-B0 default works fine at 384; the
+#                       10-15% accuracy improvement at higher resolution
+#                       on dermoscopy is documented in the literature)
+#   batch_size  = 96   (40 GB VRAM allows ~3x; conservative -- could go
+#                       higher but variance from batch composition starts
+#                       to matter for the WeightedRandomSampler)
+#   num_workers = 6    (G-NAHPM-40 has 8 vCPU; leave 2 for the main thread
+#                       + GPU bridge)
+#
+# Backbone deliberately kept at efficientnet_b0. Bumping to B3 simultaneously
+# with a data composition change makes any AUC delta uninterpretable -- "is
+# it the data or the backbone?" B3 is a clean follow-up experiment with one
+# variable changed.
+# =============================================================================
 
 CFG = {
     # --- data ---
-    "input_size"        : 300,
-    "batch_size"        : 32,
+    "input_size"        : 384,
+    "batch_size"        : 96,
+    "num_workers"       : 6,
 
     # --- model ---
-    "backbone"          : "efficientnet_b0",
+    "backbone"          : "efficientnet_b0",   # KEEP -- see comment block above
     "dropout_1"         : 0.4,    # after GAP
     "hidden_dim"        : 256,
     "dropout_2"         : 0.2,    # before final linear
@@ -79,6 +100,10 @@ CFG = {
     "stage2_epochs"     : 30,     # unfreeze and fine-tune
     "es_patience"       : 7,      # increased — AUC improves more slowly than loss
     "es_delta"          : 5e-4,   # min AUC improvement to reset patience
+
+    # --- reproducibility ---
+    "seed"              : 42,     # seeds python.random, numpy, torch, cuDNN, DataLoader workers,
+                                  # and WeightedRandomSampler.
 
     # --- normalization (ImageNet) ---
     "mean"              : [0.485, 0.456, 0.406],
@@ -165,10 +190,14 @@ class SkinLesionDataset(Dataset):
         return img, label
 
 
-def make_weighted_sampler(labels: list) -> WeightedRandomSampler:
+def make_weighted_sampler(labels: list, generator: torch.Generator | None = None) -> WeightedRandomSampler:
     """
     Returns a WeightedRandomSampler that up-samples the minority class
     so each batch sees a balanced view — without duplicating the dataset.
+
+    Accepts an optional torch.Generator for reproducible sampling.
+    Trainer._run passes a seeded generator so run-to-run AUC variance is
+    bounded by the seed rather than the sampler's internal state.
     """
     labels_t  = torch.tensor(labels)
     n_pos     = labels_t.sum().item()
@@ -178,7 +207,12 @@ def make_weighted_sampler(labels: list) -> WeightedRandomSampler:
     weights   = torch.where(labels_t == 1,
                             torch.tensor(w_pos),
                             torch.tensor(w_neg))
-    return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+    return WeightedRandomSampler(
+        weights,  # type: ignore[arg-type]   # accepts Tensor at runtime; stub says Sequence[float]
+        num_samples=len(weights),
+        replacement=True,
+        generator=generator,
+    )
 
 
 # =============================================================================
@@ -189,30 +223,63 @@ def patient_level_split(
     df,
     patient_col: str  = "patient_id",
     label_col: str    = "label",
-    val_frac: float   = 0.15,
+    val_frac: float   = 0.10,
+    cal_frac: float   = 0.10,
     test_frac: float  = 0.15,
     seed: int         = 42,
 ):
     """
-    Split a DataFrame at the PATIENT level to prevent leakage.
+    Split a DataFrame at the PATIENT level to prevent leakage. Four-way
+    train/val/cal/test split so the threshold sweep runs on a held-out
+    cal cohort, independent of the cohort that drove early stopping and
+    best-epoch selection.
+
+    Default fractions: train=0.65, val=0.10, cal=0.10, test=0.15.
 
     Args:
         df          : pandas DataFrame with at least [patient_col, label_col, "image_path"]
-        patient_col : column holding the patient / lesion identifier
+        patient_col : column holding the patient identifier. MUST be present in df
+                      AND have no NaN rows. Callers should pass
+                      "effective_patient_id", which `trainer.load_and_merge_metadata`
+                      builds via the patient_id || lesion_id || isic_id fallback chain.
+                      This function hard-fails on missing column or NaN values
+                      rather than silently falling back to `isic_id` (which would
+                      be an image-level random split disguised as patient-level).
         label_col   : column holding the binary label (0/1)
-        val_frac    : fraction of patients for validation
-        test_frac   : fraction of patients for test
+        val_frac    : fraction of patients for validation (used by stage-2 ES)
+        cal_frac    : fraction of patients for threshold calibration.
+                      _sweep_threshold consumes this cohort, NOT val.
+        test_frac   : fraction of patients for test (the headline-number cohort)
         seed        : random seed
 
     Returns:
-        train_df, val_df, test_df
+        train_df, val_df, cal_df, test_df
 
     Example:
-        train_df, val_df, test_df = patient_level_split(metadata_df)
+        train_df, val_df, cal_df, test_df = patient_level_split(
+            metadata_df, patient_col="effective_patient_id"
+        )
 
     WARNING: never pass image_id as the split key — use the patient or lesion id.
     """
     import pandas as pd
+
+    # Refuse silent fallback to isic_id. If the caller didn't build a clean
+    # effective_patient_id, fail loudly here rather than producing an
+    # image-level split disguised as patient-level.
+    if patient_col not in df.columns:
+        raise ValueError(
+            f"patient_level_split: patient_col={patient_col!r} not in df.columns. "
+            f"Got: {list(df.columns)}. Build effective_patient_id in "
+            f"load_and_merge_metadata before calling."
+        )
+    n_nan = int(df[patient_col].isna().sum())
+    if n_nan > 0:
+        raise ValueError(
+            f"patient_level_split: patient_col={patient_col!r} has {n_nan:,} NaN rows. "
+            f"NaN values collapse into one synthetic patient via np.unique(), which "
+            f"creates a leak. Build a NaN-free effective_patient_id before calling."
+        )
 
     rng      = np.random.default_rng(seed)
     patients = np.array(df[patient_col].unique())
@@ -221,27 +288,36 @@ def patient_level_split(
     n       = len(patients)
     n_test  = int(n * test_frac)
     n_val   = int(n * val_frac)
+    n_cal   = int(n * cal_frac)
 
+    # Order: test first (held out, untouched until final eval), then cal
+    # (threshold sweep), then val (early-stopping), then train.
     test_patients  = patients[:n_test]
-    val_patients   = patients[n_test: n_test + n_val]
-    train_patients = patients[n_test + n_val:]
+    cal_patients   = patients[n_test: n_test + n_cal]
+    val_patients   = patients[n_test + n_cal: n_test + n_cal + n_val]
+    train_patients = patients[n_test + n_cal + n_val:]
 
     train_df = df[df[patient_col].isin(train_patients)].reset_index(drop=True)
     val_df   = df[df[patient_col].isin(val_patients)].reset_index(drop=True)
+    cal_df   = df[df[patient_col].isin(cal_patients)].reset_index(drop=True)
     test_df  = df[df[patient_col].isin(test_patients)].reset_index(drop=True)
 
     print(f"Split  →  train: {len(train_df)} imgs ({len(train_patients)} patients) | "
           f"val: {len(val_df)} imgs ({len(val_patients)} patients) | "
+          f"cal: {len(cal_df)} imgs ({len(cal_patients)} patients) | "
           f"test: {len(test_df)} imgs ({len(test_patients)} patients)")
 
     # Leakage sanity check
     overlap = (set(train_patients) & set(val_patients)) | \
+              (set(train_patients) & set(cal_patients)) | \
               (set(train_patients) & set(test_patients)) | \
-              (set(val_patients)   & set(test_patients))
+              (set(val_patients)   & set(cal_patients)) | \
+              (set(val_patients)   & set(test_patients)) | \
+              (set(cal_patients)   & set(test_patients))
     if overlap:
         warnings.warn(f"Patient leakage detected in {len(overlap)} patient(s)!")
 
-    return train_df, val_df, test_df
+    return train_df, val_df, cal_df, test_df
 
 
 # =============================================================================

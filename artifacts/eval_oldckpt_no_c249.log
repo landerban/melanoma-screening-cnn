@@ -1,0 +1,25 @@
+device   : cuda
+ckpt     : best_model.pth
+threshold: 0.347
+
+Split  →  train: 50723 imgs (1441 patients) | val: 5168 imgs (308 patients) | test: 5505 imgs (308 patients)
+Full val cohort (matches Phase 3)        : 5,168 (pos=79)
+  source breakdown                       : {'70': 5168}
+Ghost val (c=70 + c=212 only)            : 5,168 (pos=79, neg=5089)
+  dropped (c=249 + any untagged)         : 0
+
+ROC-AUC = 0.6243  [95% CI: 0.5561, 0.6866]  (1000 bootstraps, seed=42)
+At threshold 0.347:
+  recall      = 0.899  (71/79)
+  specificity = 0.204  (1040/5089)
+  CM: TN=1040  FP=4049  FN=8  TP=71
+
+Reference points for interpretation:
+  full new val (c=70+212+249)   AUC 0.6243 [0.5561, 0.6866]   (Phase 3 bootstrap)
+  CLAUDE.md old-data headline   AUC 0.928                       (audit doc)
+
+Interpretation rule:
+  - if ghost AUC lands near 0.928 -> c=390 was not carrying the signal;
+    the c=390 drop has empirical support (audit weakness W8).
+  - if ghost AUC lands meaningfully lower -> can't disambiguate c=390-was-load-bearing
+    from c=249-OOD; c=390 drop stands on a-priori grounds only.

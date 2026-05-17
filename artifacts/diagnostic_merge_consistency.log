@@ -1,0 +1,29 @@
+Concatenated 3 CSV(s) -> 63,792 rows total
+
+CHECK (a): diagnosis_1 vocabulary
+------------------------------------------------------------------------------
+diagnosis_1
+Benign           49785
+Malignant        11611
+Indeterminate     1240
+NaN               1156
+
+  trainer.py:161 will silently drop 2,396 rows in these classes:
+    'Indeterminate'           : 1,240
+    nan                       : 1,156
+
+CHECK (b): image_type per source_collection
+------------------------------------------------------------------------------
+image_type         dermoscopic  NaN
+source_collection                  
+212                      11719    1
+249                      18946    0
+70                       33126    0
+
+  All training-pool rows are dermoscopic (no 'clinical:*' types).
+
+CHECK (c): isic_id cross-collection duplicates
+------------------------------------------------------------------------------
+  isic_id duplicate rows           : 0
+  No cross-collection isic_id duplicates. trainer.py:158 dedup is a no-op.
+

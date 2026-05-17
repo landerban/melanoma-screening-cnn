@@ -1,0 +1,18 @@
+Phase 5 / A3 -- reproducibility check (seed=42)
+
+Run 1 ...
+Split  →  train: 39647 imgs (10115 patients) | val: 6634 imgs (1555 patients) | cal: 5929 imgs (1555 patients) | test: 9186 imgs (2333 patients)
+  batch size: 96  logits shape: (96, 1)
+  logits[:3]: [-0.37428808212280273, -0.7352226376533508, -0.5536198616027832]
+
+Run 2 ...
+Split  →  train: 39647 imgs (10115 patients) | val: 6634 imgs (1555 patients) | cal: 5929 imgs (1555 patients) | test: 9186 imgs (2333 patients)
+  batch size: 96  logits shape: (96, 1)
+  logits[:3]: [-0.37428808212280273, -0.7352226376533508, -0.5536198616027832]
+
+============================================================
+image paths identical : True  (run1[0..3]: ['training_data/images/ISIC_0028114.jpg', 'training_data/images/ISIC_0028445.jpg', 'training_data/images/ISIC_0032400.jpg'])
+logits max |diff|     : 0.00e+00
+logits mean |diff|    : 0.00e+00
+
+  OK: end-to-end deterministic. Same seed -> same paths, same logits to ~1e-6.

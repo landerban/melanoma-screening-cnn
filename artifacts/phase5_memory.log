@@ -1,0 +1,9 @@
+Stage-2 config: batch=96  input=384x384  backbone_lr=5e-06  head_lr_s2=0.0001
+
+peak_allocated : 25.08 GB
+peak_reserved  : 27.71 GB
+total VRAM     : 42.41 GB
+margin to OOM  : 14.71 GB  (need >= 4 GB)
+limit (38 GB)  : OK
+
+  OK: peak 25.08 GB <= 38 GB; safe for Phase 6 at batch=96.

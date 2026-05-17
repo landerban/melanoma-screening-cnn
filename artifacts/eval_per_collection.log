@@ -1,0 +1,22 @@
+ckpt    : best_model.pth
+device  : cuda
+threshold (from ckpt): 0.6612
+
+Split  →  train: 39647 imgs (10115 patients) | val: 6634 imgs (1555 patients) | cal: 5929 imgs (1555 patients) | test: 9186 imgs (2333 patients)
+Test cohort: 9,186 images  (1767 pos / 7419 neg)
+  by source: {'70': 4944, '249': 2534, '212': 1708}
+
+PER-COLLECTION BREAKDOWN  (threshold = 0.661)
+====================================================================================================
+  Overall (test)          N= 9,186  pos=1,767 (19.2%)  AUC=0.9513  PR-AUC=0.8353  recall=0.835  spec=0.914
+
+  c=212                   N= 1,708  pos=  305 (17.9%)  AUC=0.9151  PR-AUC=0.7494  recall=0.741  spec=0.896
+  c=249                   N= 2,534  pos=1,376 (54.3%)  AUC=0.8702  PR-AUC=0.8849  recall=0.893  spec=0.656
+  c=70                    N= 4,944  pos=   86 ( 1.7%)  AUC=0.8835  PR-AUC=0.1223  recall=0.233  spec=0.981
+
+Interpretation guide:
+  - If per-collection AUCs cluster around the headline (~+/- 0.03),
+    the test AUC reflects uniform quality across modalities (W8 clean).
+  - If c=249 sits meaningfully higher than c=70/c=212 (gap > 0.05),
+    BCN20000's higher malignant prevalence is doing more work than
+    the model's discriminative quality -- slide must disclose.

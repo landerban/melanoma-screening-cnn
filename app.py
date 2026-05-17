@@ -192,6 +192,53 @@ def cb_stop():
 # Inference callback
 # ---------------------------------------------------------------------------
 
+def _load_ckpt_state_dict(ckpt_path: str, device):
+    """
+    Load both rich-dict and legacy-bare-state-dict checkpoints.
+
+    Rich format is a dict with at least a "state_dict" key plus metadata
+    (cfg, optimal_threshold, val_metrics, test_metrics, git_hash, etc.).
+    Legacy format is a flat state_dict. We trust our own ckpts so
+    weights_only=False is acceptable; raise if neither format matches.
+    """
+    obj = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if isinstance(obj, dict) and "state_dict" in obj:
+        return obj["state_dict"]
+    # Legacy bare state_dict: dict[str, Tensor] without "state_dict" wrapper
+    if isinstance(obj, dict) and all(hasattr(v, "shape") for v in obj.values()):
+        return obj
+    raise RuntimeError(
+        f"Unrecognized checkpoint format at {ckpt_path}. Expected a dict with "
+        f"'state_dict' (rich format) or a bare state_dict (legacy)."
+    )
+
+
+# Cache the constructed model + GradCAM hook per checkpoint path.
+# Without this, every click on "Run Prediction" reloads ~17 MB of weights from
+# disk and re-installs GradCAM hooks -- a measurable latency hit on the UI.
+# Cache key includes the ckpt's mtime so users editing the same path get
+# a fresh load after retraining.
+_MODEL_CACHE: dict[tuple[str, float], tuple] = {}
+
+
+def _get_cached_model(ckpt_path: str, device):
+    mtime = os.path.getmtime(ckpt_path)
+    key = (ckpt_path, mtime)
+    cached = _MODEL_CACHE.get(key)
+    if cached is not None:
+        return cached
+    model = EfficientNetB0Classifier(freeze_backbone=False).to(device)
+    model.load_state_dict(_load_ckpt_state_dict(ckpt_path, device))
+    model.eval()
+    gcam = GradCAM(model)
+    # Evict any stale entries for the same path (different mtime).
+    for k in list(_MODEL_CACHE.keys()):
+        if k[0] == ckpt_path:
+            del _MODEL_CACHE[k]
+    _MODEL_CACHE[key] = (model, gcam)
+    return model, gcam
+
+
 def cb_predict(img_np, ckpt_path, threshold):
     if img_np is None:
         return None, "No image uploaded."
@@ -199,17 +246,13 @@ def cb_predict(img_np, ckpt_path, threshold):
         return None, f"Checkpoint not found:\n{ckpt_path}\n\nTrain the model first."
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = EfficientNetB0Classifier(freeze_backbone=False).to(device)
-    model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
-    model.eval()
+    model, gcam = _get_cached_model(ckpt_path, device)
 
     transform  = get_transforms(CFG, "val")
     img_pil    = Image.fromarray(img_np).convert("RGB")
     img_tensor = transform(img_pil).to(device)
 
     # Grad-CAM (requires grad, so don't wrap in no_grad)
-    gcam = GradCAM(model)
     cam  = gcam.generate(img_tensor)
 
     with torch.no_grad():

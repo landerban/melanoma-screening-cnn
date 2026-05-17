@@ -1,0 +1,16 @@
+Phase 5 / A1 -- dataset coverage verification
+
+Pre-image-filter rows: 61,396
+  by source: {'70': 33123, '249': 16702, '212': 11571}
+
+load_and_merge_metadata returned: 61,396
+  by source: {'70': 33123, '249': 16702, '212': 11571}
+
+Rows with image_path (non-null): 61,396
+Rows dropped (image not on disk): 0
+
+effective_patient_id NaN rows: 0
+label distribution: {0: 49785, 1: 11611}
+
+============================================================
+  CLEAN: all 61,396 expected rows present on disk.
