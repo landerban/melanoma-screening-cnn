@@ -77,39 +77,52 @@ Falsification: OOD recall < 0.65.
 Identical to Phase 6: EfficientNet-B0 backbone + MLP head
 (1280 → 256 → 1). Loaded from `best_model.pth`.
 
-### Augmentation diff vs Phase 6
+### Augmentation diff vs Phase 6 (AMENDED 2026-06-09)
 
-Phase 6 transform (val mode unchanged):
-
-```
-RandomResizedCrop(384, scale=(0.8, 1.0))
-RandomHorizontalFlip()
-RandomVerticalFlip()
-RandomRotation(degrees=15)
-ColorJitter(brightness=0.2, contrast=0.2)   ← Phase 6
-```
-
-Phase 10 transform — *adds* HSV jitter on top:
+**Original pre-registration** (committed 2026-06-08, before Phase 11):
 
 ```
-[ above transforms ]
 ColorJitter(brightness=0.2, contrast=0.2,
-            saturation=0.15, hue=0.05)       ← Phase 10 ADDS
+            saturation=0.15, hue=0.05)
 ```
 
-Rationale for jitter magnitudes:
-- hue=0.05: ≤ 18° in HSV. Subtle. ISIC collections differ in hue cast
-  by typically ~10°. We jitter on the same magnitude so the model
-  cannot lock onto the collection-specific hue mean.
-- saturation=0.15: ±15% saturation. Allows the model to learn
-  pigmentation as a feature while preventing collection-specific
-  saturation distribution memorization.
+**Amendment** (post Phase 11/12 results, 2026-06-09):
 
-The Phase 6 deliberate exclusion of hue/sat jitter was justified by
-"color is diagnostic for melanoma." Phase 10's claim is that *small*
-hue/sat jitter still allows the model to learn diagnostic color
-features (the within-class variance ≫ the jitter magnitude) but
-prevents *collection-level* color signature memorization.
+```
+ColorJitter(brightness=0.2, contrast=0.2,
+            saturation=0.0, hue=0.10)
+```
+
+Saturation jitter is removed; hue jitter is doubled.
+
+**Rationale for amendment**
+
+Phase 11 (`docs/phase11/02_results.md`) decomposed the color-cast
+shortcut by HSV channel:
+
+- hue:        ΔP = −0.243  (93% of joint effect, p < 1e-20)
+- saturation: ΔP = +0.010  (null, p = 0.44)
+- value:      ΔP = −0.005  (null, p = 0.89)
+
+The original prescription (saturation=0.15) was *mechanistically
+unnecessary* — saturation does not carry the shortcut signal.
+Including saturation jitter would dilute the gradient budget across
+two channels when only one matters. The amended prescription
+concentrates the perturbation budget on hue, doubling its magnitude
+to compensate for the removed channel.
+
+Phase 6's deliberate exclusion of hue/sat jitter was justified by
+"color is diagnostic for melanoma." Phase 12 (`02_results.md` §3.2)
+showed that lesion-interior colour normalization has only a weak
+effect on prediction (ΔP = +0.053 vs +0.135 full normalization),
+i.e. lesion-colour is *less load-bearing* than Phase 6's exclusion
+assumed. A 0.10 hue jitter (~ 36° in HSV) is well within the
+*within-class* hue variance documented across HAM10000, SIIM, and
+BCN20000; it perturbs the *collection-level* hue signature without
+destroying the *lesion-level* colour signal.
+
+This amendment is a pre-registered methodological refinement. The
+falsification logic (H6–H10) is unchanged.
 
 ### Training protocol
 

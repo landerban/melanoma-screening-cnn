@@ -54,9 +54,24 @@ from trainer import load_and_merge_metadata  # noqa: E402
 def get_phase10_train_transform(cfg: dict) -> transforms.Compose:
     """
     Phase 10 training transform = Phase 6 transform + ColorJitter
-    extended with saturation=0.15, hue=0.05.
+    extended with HUE-only jitter (saturation jitter omitted).
 
-    Rationale: see docs/phase10/01_preregistration.md §Method.
+    Rationale (post-Phase-11 update):
+      Phase 11 (docs/phase11/02_results.md) decomposed the color-cast
+      shortcut by HSV channel and found:
+        hue:        ΔP = -0.243  (93% of joint effect, p < 1e-20)
+        saturation: ΔP = +0.010  (null, p = 0.44)
+        value:      ΔP = -0.005  (null, p = 0.89)
+      Saturation jitter is therefore *mechanistically unnecessary* for
+      breaking the shortcut. Hue jitter is the only intervention that
+      maps to the identified causal cue.
+
+      Initial pre-registration used (sat=0.15, hue=0.05); the amended
+      protocol uses (sat=0.0, hue=0.10) — saturation off, hue jitter
+      doubled to compensate for the removed channel.
+
+      The decision and its empirical justification are logged in
+      docs/phase10/01_preregistration.md §"Amendment 2026-06-09".
     """
     size = cfg["input_size"]
     return transforms.Compose([
@@ -64,10 +79,11 @@ def get_phase10_train_transform(cfg: dict) -> transforms.Compose:
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
         transforms.RandomRotation(degrees=15),
-        # KEY CHANGE: saturation and hue jitter added vs Phase 6
+        # KEY CHANGE: hue-only jitter (saturation off) vs Phase 6
+        # Phase-11-informed: see Phase 11 channel decomposition above.
         transforms.ColorJitter(
             brightness=0.2, contrast=0.2,
-            saturation=0.15, hue=0.05,
+            saturation=0.0, hue=0.10,
         ),
         transforms.ToTensor(),
         transforms.Normalize(mean=cfg["mean"], std=cfg["std"]),
@@ -285,7 +301,7 @@ def main():
         "pre_finetune_test_auc": float(test_pre["auc"]),
         "post_finetune_test_auc": float(test_post["auc"]),
         "phase10_modifications": {
-            "augmentation_added": "saturation=0.15, hue=0.05",
+            "augmentation_added": "saturation=0.0, hue=0.10 (Phase 11-informed)",
             "lr": args.lr,
             "epochs_trained": args.epochs,
             "best_epoch": int(best_epoch),
