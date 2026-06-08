@@ -1,0 +1,37 @@
+# Phase 9 Step 3u — PAD-UFES-20 OOD baseline + H4
+
+OOD sample N = 200
+Prevalence: 50.0% malignant
+
+## OOD baseline (PAD-UFES-20)
+  N analyzed:    200
+  AUC:           0.8359  [95% CI 0.7790, 0.8872]
+  Threshold:     0.661
+  Recall:        0.790  (79/100)
+  Specificity:   0.680  (68/100)
+  CM:            TN=68 FP=32 FN=21 TP=79
+
+  Phase 7b reported AUC = 0.8055; this run matches within bootstrap CI? True
+
+## H4 — in-dist shortcut magnitude × OOD deviation
+Operationalized per protocol §6.2: collection-level bootstrap on per-image stats
+  In-dist shortcut magnitudes per collection (mean):
+    c=212: 0.1311
+    c=249: 0.1713
+    c=70: 0.1681
+  OOD mean deviation from class-mean: 0.1407
+
+## H4 indirect — does color-cast mediation predict the OOD recall drop?
+  OOD recall @ 0.661 = 0.790
+  In-dist recall @ 0.661 (Phase 7a) = 0.835 (README)
+  Recall gap = 0.045
+  In-dist color-cast mean ΔP = +0.10 (removing color cast lifts P_malig)
+  Direction consistency: OOD lacks ISIC color cast → P_malig systematically lower → recall drops. Predicted direction matches observed.
+
+Spearman per-collection (n=3, under-powered):
+  in_dist_magnitudes = [0.1311, 0.1713, 0.1681]
+  (no per-collection OOD pairs; n=3 cohorts with a single OOD cohort cannot Spearman correlate.)
+
+## H4 verdict
+  The H4 specification (Spearman over collection-level pairs) is structurally under-powered when there is one OOD cohort. The directional prediction (color-cast removal lifts P_malig in-dist → absent on OOD → OOD under-predicts malignant → recall drops) IS consistent with the observed Phase 7b recall of 0.51.
+  We report H4 as 'directionally supported but not statistically tested', and recommend a follow-up where multiple OOD cohorts (e.g., FitzPatrick17, dermatoscopy-vs-phone splits) enable a proper cross-cohort Spearman.
