@@ -1,0 +1,42 @@
+# Phase 11 — HSV channel decomposition of color-cast shortcut
+Sample N = 300 (color-cast present: N=155)
+Target HSV mean: H=77.63, S=68.17, V=177.96
+
+## Marginal per-channel ΔP (color-cast-present subset)
+  H (hue)           : mean Δ = -0.2425 [-0.2796, -0.2044],  Wilcoxon p = 6.33e-21
+  S (saturation)    : mean Δ = +0.0096 [-0.0096, +0.0309],  Wilcoxon p = 0.4392
+  V (value)         : mean Δ = -0.0054 [-0.0186, +0.0067],  Wilcoxon p = 0.892
+  HSV (all)         : mean Δ = -0.2612 [-0.2977, -0.2247],  Wilcoxon p = 4.56e-22
+
+## H11 — channel dominance
+  Dominant channel: H (hue) (|Δ|=0.2425)
+  Joint |Δ|=0.2612; dominance fraction = 92.8%
+  H11 supported (one channel ≥ 60% of joint)? True
+
+## H12 — additivity
+  Σ|Δ_c| = 0.2575, |Δ_HSV| = 0.2612
+  Discrepancy = 1.4%
+  H12 supported (additivity within ±20%)? True
+
+## H13 — per-collection channel profile
+
+  c=212 (N=48):
+    H       : mean Δ = -0.2134
+    S       : mean Δ = +0.0366
+    V       : mean Δ = +0.0148
+    HSV all : mean Δ = -0.2538
+
+  c=249 (N=64):
+    H       : mean Δ = -0.1967
+    S       : mean Δ = -0.0404
+    V       : mean Δ = -0.0070
+    HSV all : mean Δ = -0.2239
+
+  c=70 (N=43):
+    H       : mean Δ = -0.3432
+    S       : mean Δ = +0.0540
+    V       : mean Δ = -0.0254
+    HSV all : mean Δ = -0.3250
+
+## Files emitted
+  CSV: artifacts/phase11/01_hsv_decomposition.csv
