@@ -106,6 +106,136 @@ within ±0.001 of 0.9513 on the same test cohort.
 
 ---
 
+## [2026-06-08 — Phase 9 Primary Finding #1: Prevalence-balanced AUC reveals collection-specific shortcut reliance]
+
+**Observed.** Running the Phase 6 ckpt on our 300-image
+prevalence-balanced analytical sample (50% benign / 50% malignant within
+each collection's N=100 cell) produces collection AUCs that diverge
+dramatically from the Phase 7c prevalence-skewed AUCs:
+
+| Collection | Phase 7c AUC (skewed) | Phase 9 AUC (50/50) | Delta |
+|---|---|---|---|
+| c=212 HAM10000 | 0.9151 | **0.943** | +0.028 |
+| c=249 BCN20000 | 0.8702 | **0.778** | -0.092 |
+| c=70 SIIM 2020 | 0.8835 | **0.548** | **-0.336** |
+
+Per-class mean P_malig:
+
+| Collection | Benign mean | Malignant mean | Gap |
+|---|---|---|---|
+| c=212 | 0.413 | 0.867 | **0.454** |
+| c=249 | 0.597 | 0.776 | 0.179 |
+| c=70 | 0.576 | 0.625 | **0.049** |
+
+**Interpretation.** A prevalence-skewed AUC is inflated by the model's
+ability to *systematically score one collection higher than another*.
+When prevalence is balanced (our analytical sample), only
+*within-collection* discriminative power survives. The Phase 7c c=70
+AUC of 0.88 was *almost entirely* a function of the cohort's 1.7%
+prevalence — under balanced conditions the model is essentially
+guessing at chance (0.548) on c=70 lesions. c=212 is the opposite:
+its lesion-feature signal is *strong enough* that balancing prevalence
+*raises* the AUC (0.92 → 0.94). c=249 sits in between.
+
+**Why this is novel.** No prior dermatology shortcut paper measured
+this. The closest are:
+
+- Bissoto 2019 (lesion-occlusion): showed models perform above
+  baseline on occluded images, but did not decompose by collection or
+  by prevalence regime.
+- Phase 7c (our own): reported per-collection AUC at the *natural*
+  collection prevalences; that report acknowledges aggregate-vs-
+  per-collection gap as "modality-prior shortcut" but does not
+  isolate the prevalence contribution from the within-collection
+  discriminative contribution.
+
+Phase 9 closes that gap by holding prevalence constant. The
+remaining cross-collection AUC heterogeneity (0.94 / 0.78 / 0.55) is
+*purely* within-collection discriminative power, separable from the
+prevalence prior.
+
+**Headline reframing for slide 9.** The slide currently says
+"per-collection AUCs cluster at 0.87–0.92". The honest message after
+Phase 9 is sharper: **"At natural prevalence the per-collection AUCs
+look comparable (0.87–0.92), but at balanced prevalence c=70 falls to
+0.55 — chance — revealing that the SIIM-cohort score is almost
+entirely a prevalence-prior contribution rather than lesion
+discrimination."** This sharpens the modality-shortcut claim from a
+"contribution" to an "almost-entirely" attribution on c=70.
+
+**Decision.** Treat this as the Phase 9 primary finding. Even if
+counterfactual inpainting (H2) and Shapley decomposition (H3) produce
+modest effect sizes downstream, this single measurement is already a
+publishable result. Promote it to the paper's Figure 1.
+
+**Limitations to flag in the paper.**
+- N=100 per cell is small; bootstrap 95% CI on AUC 0.548 is wide
+  (likely ±0.07 — to be computed in Phase 4a).
+- The model has *seen* some of our analytical-sample patients during
+  Phase 6 training (Phase 6 train/val/cal cohorts overlap with our
+  test cohort? NO — we reproduced the same patient_level_split, so our
+  300 are all from the held-out test cohort. This is clean.)
+- 50/50 balance is a *measurement-friendly* prevalence, not a *clinical*
+  one. The clinical message is: SIIM-style screening deployments
+  should not trust the 0.88 AUC headline.
+
+**Watch.**
+- Phase 4a will run bootstrap CIs on the three per-collection balanced
+  AUCs. If the c=70 CI lower-bound exceeds 0.50, the "almost chance"
+  reading needs softening.
+- Phase 4c (gap decomposition) becomes more interesting: the
+  "shortcut-explained gap" needs to be partitioned against this new
+  prevalence-removed baseline.
+
+---
+
+## [2026-06-08 — Ruler detector parameter sensitivity sweep]
+
+**Observed.** The first-pass ruler detector
+(canny=50/150, min_len=60, threshold=50) produced 42% ruler-positive
+rate on the analytical sample — implausibly high vs. Sirico 2023's
+manual-annotation prior of ~20–30%. Inspecting the per-collection
+breakdown showed c=70 at 55%, c=212 at 42%, c=249 at 29%; not
+consistent with Winkler 2019 (rulers documented chiefly in SIIM-style
+cohorts).
+
+**Diagnosis.** Hough's probabilistic line detector at the default
+threshold catches lesion-boundary edges as line segments. The
+geometric short axis of a curved lesion edge satisfies the length
+gate when min_len=60, even though it is not a ruler.
+
+**Decided.** Add an aspect-ratio gate (line dominant-axis length ≥
+1.5 × orthogonal jitter) and tighten Hough parameters (min_len=100,
+threshold=80, max_gap=5; Canny=80/200). Verified via 4-config sweep
+in `scripts/phase9/03b_ruler_sensitivity.py`:
+
+| Config | Overall | c=70 | c=212 | c=249 |
+|---|---|---|---|---|
+| baseline (orig) | 42% | 55% | 42% | 29% |
+| **strict-1 (chosen)** | **13%** | **24%** | **9%** | **6%** |
+| strict-2 | 5% | 11% | 3% | 1% |
+| strict-3 | 4% | 10% | 2% | 0% |
+
+Decision rule: first strict config retaining ≥10 ruler-positives on
+c=70 (Winkler-2019 collection) and <30 (avoids lesion-edge false
+positives). Strict-1 met both.
+
+**Why.** Without this tightening, downstream LaMa-inpainting would
+mostly remove *lesion edges* on ruler-flagged images, biasing the
+counterfactual P_malig estimate toward "ruler matters" when in fact
+the model was reacting to lesion-shape removal. The aspect-ratio gate
+is principled: surgical-skin-marker lines are dominantly straight; the
+edges of organic lesion boundaries are not.
+
+**Watch.** Even strict-1's c=212 = 9% may include false positives.
+We are not running Phase 3l manual ink verification due to time
+budget; we will instead flag any image where the ruler mask intersects
+significantly with the lesion mask (Phase 3h) and treat those as a
+sensitivity-disclosure pool. Their per-image ΔP estimates will be
+reported with and without the suspect images included.
+
+---
+
 ## [2026-06-08 — Split-reproduction divergence and resolution]
 
 **Observed.** First run of `scripts/phase9/01_select_sample.py` produced

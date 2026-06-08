@@ -1,0 +1,31 @@
+# Phase 9 Step 3k-sensitivity — ruler detector parameter sweep
+
+## Per-config presence rates
+
+  baseline (orig):
+    overall: 126/300 (42.0%)
+    c=212: 42/100 (42.0%)
+    c=249: 29/100 (29.0%)
+    c=70: 55/100 (55.0%)
+
+  strict-1:
+    overall: 39/300 (13.0%)
+    c=212: 9/100 (9.0%)
+    c=249: 6/100 (6.0%)
+    c=70: 24/100 (24.0%)
+
+  strict-2:
+    overall: 15/300 (5.0%)
+    c=212: 3/100 (3.0%)
+    c=249: 1/100 (1.0%)
+    c=70: 11/100 (11.0%)
+
+  strict-3:
+    overall: 12/300 (4.0%)
+    c=212: 2/100 (2.0%)
+    c=249: 0/100 (0.0%)
+    c=70: 10/100 (10.0%)
+
+## Decision
+  Chosen config: strict-1
+  Reason: first strict config retaining >=10 ruler-positives on c=70 (Winkler-2019 collection) and <30 (avoids lesion-edge false positives).
