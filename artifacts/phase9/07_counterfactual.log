@@ -1,0 +1,44 @@
+# Phase 9 Step 3q-t — counterfactual P_malig
+N = 300
+Configs: ['original', 'no_vignette', 'no_ruler', 'no_hair', 'no_colorcast', 'all_removed']
+
+## Marginal effects per shortcut
+(delta = mean[ P(no_X) - P(original) ] on images with X present)
+  vignette     (N= 20): mean Δ = +0.0070, median Δ = +0.0030, sd = 0.0401
+  ruler        (N= 39): mean Δ = +0.0030, median Δ = +0.0013, sd = 0.0228
+  hair         (N=220): mean Δ = -0.0662, median Δ = -0.0479, sd = 0.1319
+  colorcast    (N=155): mean Δ = +0.1039, median Δ = +0.0458, sd = 0.1937
+
+## Joint vs sum-of-marginals (interaction term)
+On images with ALL shortcuts present (sub-sample):
+  N with all-4 present: 1
+  mean Δ_joint = -0.1978
+  mean Σ(Δ_marginal) = -0.3134
+  interaction (joint - sum) = +0.1157
+
+## Per-collection marginal effects
+
+  vignette:
+    c=212: N=0 (no present)
+    c=249: N= 20, mean Δ = +0.0070
+    c=70: N=0 (no present)
+
+  ruler:
+    c=212: N=  9, mean Δ = +0.0115
+    c=249: N=  6, mean Δ = -0.0007
+    c=70: N= 24, mean Δ = +0.0007
+
+  hair:
+    c=212: N= 78, mean Δ = -0.0318
+    c=249: N= 68, mean Δ = -0.0902
+    c=70: N= 74, mean Δ = -0.0804
+
+  colorcast:
+    c=212: N= 48, mean Δ = +0.1017
+    c=249: N= 64, mean Δ = +0.0927
+    c=70: N= 43, mean Δ = +0.1229
+
+## Notes
+  - QA examples saved: artifacts/phase9/07_cf_inpainted_qa (75 images)
+  - Inpainting: OpenCV Telea, radius=5px
+  - Color-cast removal: Lab-space mean shift to analytical-sample mean

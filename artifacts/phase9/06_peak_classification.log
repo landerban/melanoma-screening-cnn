@@ -1,0 +1,54 @@
+# Phase 9 Step 3o — Grad-CAM peak region classification
+Sample N = 300
+
+## Overall peak distribution
+  on_lesion     : 145/300 (48.3%)
+  on_vignette   :   0/300 (0.0%)
+  on_ruler      :   0/300 (0.0%)
+  on_hair       :  15/300 (5.0%)
+  on_skin       : 140/300 (46.7%)
+
+## Per-collection peak distribution (H1 direct data)
+
+  c=212: (N=100)
+    on_lesion     :  63 (63.0%)
+    on_vignette   :   0 (0.0%)
+    on_ruler      :   0 (0.0%)
+    on_hair       :   4 (4.0%)
+    on_skin       :  33 (33.0%)
+
+  c=249: (N=100)
+    on_lesion     :  44 (44.0%)
+    on_vignette   :   0 (0.0%)
+    on_ruler      :   0 (0.0%)
+    on_hair       :   8 (8.0%)
+    on_skin       :  48 (48.0%)
+
+  c=70: (N=100)
+    on_lesion     :  38 (38.0%)
+    on_vignette   :   0 (0.0%)
+    on_ruler      :   0 (0.0%)
+    on_hair       :   3 (3.0%)
+    on_skin       :  59 (59.0%)
+
+## Per-class peak distribution
+
+  benign (N=150):
+    on_lesion     :  66 (44.0%)
+    on_vignette   :   0 (0.0%)
+    on_ruler      :   0 (0.0%)
+    on_hair       :   7 (4.7%)
+    on_skin       :  77 (51.3%)
+
+  malignant (N=150):
+    on_lesion     :  79 (52.7%)
+    on_vignette   :   0 (0.0%)
+    on_ruler      :   0 (0.0%)
+    on_hair       :   8 (5.3%)
+    on_skin       :  63 (42.0%)
+
+## H1 anchor: shortcut-attention rate per collection
+  (any non-on_lesion non-on_skin peak counts as shortcut)
+  c=212: shortcut-attention = 4/100 (4.0%)
+  c=249: shortcut-attention = 8/100 (8.0%)
+  c=70: shortcut-attention = 3/100 (3.0%)
