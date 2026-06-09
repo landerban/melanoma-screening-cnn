@@ -1,0 +1,28 @@
+# Phase 12 / Step 4 -- LACN partial-strength alpha sweep
+
+OOD cohort: PAD-UFES-20, N = 200
+Prevalence: 50.0% malignant
+
+Reuse Otsu masks: reliable=172/200
+Target Lab mean (Phase 9 ref): [155.44000244140625, 142.80999755859375, 135.4600067138672]
+
+Stratified cal/test split (seed=42): cal N=100, test N=100
+
+## Per-alpha test-set metrics
+alpha |    AUC | tau_alpha | B-recall  B-spec   B-f1 | C-recall  C-spec   C-f1
+ 0.00 |  0.850 |     0.640 |    0.820   0.720  0.781 |    0.840   0.680  0.778
+ 0.25 |  0.831 |     0.650 |    0.800   0.720  0.769 |    0.820   0.700  0.774
+ 0.50 |  0.818 |     0.670 |    0.760   0.720  0.745 |    0.760   0.720  0.745
+ 0.75 |  0.806 |     0.680 |    0.840   0.640  0.764 |    0.840   0.700  0.785
+ 1.00 |  0.798 |     0.670 |    0.860   0.600  0.761 |    0.840   0.640  0.764
+
+## Sweet-spot identification
+  Best F1 (recalibrated):   alpha=0.75  F1=0.785
+  Best AUC:                 alpha=0.00  AUC=0.850
+
+## Verdict
+  AUC is monotonically decreasing in alpha. No partial-strength sweet spot exists; LACN strength controls only the recall/spec balance, not discriminative quality.
+
+## Files emitted
+  CSV:     artifacts/phase12/04_lacn_alpha.csv
+  Figure:  artifacts/phase12/figures/fig20_lacn_alpha_sweep.png
