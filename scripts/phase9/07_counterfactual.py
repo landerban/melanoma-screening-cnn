@@ -182,8 +182,8 @@ def main():
     ]
 
     rows = []
-    qa_save_count = 0
-    QA_LIMIT = 15  # save 15 examples per config for visual QA
+    per_config_qa = {c[0]: 0 for c in configs}  # per-config counter
+    QA_LIMIT = 15  # save up to 15 examples PER CONFIG for visual QA
 
     for _, row in tqdm(df.iterrows(), total=len(df), desc="cf"):
         isic_id = row["isic_id"]
@@ -216,10 +216,10 @@ def main():
             p_malig = forward_p_malig(model, current, transform, device)
             out[f"p_malig__{config_name}"] = round(p_malig, 6)
 
-            # Save a few examples for visual QA
-            if config_name != "original" and applied and qa_save_count < QA_LIMIT * 5:
+            # Save a few examples for visual QA — per-config limit
+            if config_name != "original" and applied and per_config_qa[config_name] < QA_LIMIT:
                 cv2.imwrite(str(QA_DIR / f"{isic_id}__{config_name}.jpg"), current)
-                qa_save_count += 1
+                per_config_qa[config_name] += 1
 
         rows.append(out)
 
