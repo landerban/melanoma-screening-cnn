@@ -1,0 +1,36 @@
+# Phase 10 fine-tune log
+timestamp: 2026-06-09T05:38:49.763922+00:00
+base_ckpt: best_model.pth
+device: cuda
+epochs: 5, lr: 1e-05, batch: 96
+
+## Loading metadata
+Merged 61,396 rows
+train=39,647 val=6,634 cal=5,929 test=9,186
+
+## Loading base ckpt
+Base ckpt loaded: 4,335,741 params
+
+## Pre-fine-tune eval (base ckpt on val + test)
+  pre-FT val  AUC = 0.7944
+  pre-FT test AUC = 0.8017
+
+## Fine-tune trajectory
+  epoch 1: train_loss=0.0421, val_AUC=0.9042, time=1019s
+    new best val AUC; checkpointing
+  epoch 2: train_loss=0.0259, val_AUC=0.9205, time=1025s
+    new best val AUC; checkpointing
+  epoch 3: train_loss=0.0234, val_AUC=0.9278, time=1024s
+    new best val AUC; checkpointing
+  epoch 4: train_loss=0.0220, val_AUC=0.9332, time=1018s
+    new best val AUC; checkpointing
+  epoch 5: train_loss=0.0211, val_AUC=0.9363, time=1023s
+    new best val AUC; checkpointing
+
+Best val AUC = 0.9363 at epoch 5
+
+## Final test eval
+  post-FT test AUC = 0.9369 (pre-FT was 0.8017)
+  ΔAUC = +0.1352
+
+Ckpt saved: /content/melanoma-screening-cnn/artifacts/phase10/best_model_color_invariant.pth

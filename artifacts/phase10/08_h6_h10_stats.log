@@ -1,0 +1,37 @@
+# Phase 10 — H6-H10 hypothesis tests
+Seed: 42, B (bootstrap): 5000
+
+## H6 — Test AUC preservation
+Prediction: post-FT test AUC ∈ [0.93, 0.96]; lower CI ≥ 0.93
+  Pre-FT test AUC: 0.8017
+  Post-FT test AUC: 0.9369
+  ΔAUC: +0.1352
+  H6 supported (in band)? True
+
+## H7 — Color-cast ΔP reduction ≥ 50%
+  Phase 9 mean ΔP: +0.1039 [+0.0944, +0.0944]
+  Phase 10 mean ΔP: +0.0144 [-0.0010, +0.0309]
+  Reduction: 86.2%
+  H7 supported (Phase 10 |ΔP| ≤ 0.05 AND CIs disjoint)? True
+
+## H8 — c=70 balanced AUC ≥ 0.65
+  Phase 9 c=70 balanced AUC: 0.548 [0.432, 0.663]
+  Phase 10 c=70 balanced AUC: 0.8668 [0.7854, 0.9359]
+  H8 supported (AUC ≥ 0.65 AND lo > 0.50)? True
+
+## H9 — Cross-collection gap ≤ 0.30
+  Phase 9 gap (c=212 − c=70): 0.434
+  Phase 10 gap: 0.0932
+  H9 supported (gap ≤ 0.30)? True
+
+## H10 — OOD recall safety check ≥ 0.70
+  Phase 9 OOD recall @ 0.661 (balanced 50/50): 0.790
+  Phase 10 OOD recall: 0.710
+  H10 supported (recall ≥ 0.70)? True
+
+## Summary
+  H6: {'supported': True, 'post_auc': 0.9368798187373264, 'delta': 0.13517439011003796}
+  H7: {'supported': True, 'p10_mean': 0.01435458977376261, 'p9_mean': 0.10386518064516129, 'reduction': 0.8617959388834766}
+  H8: {'supported': True, 'p10_auc': 0.8668, 'lo': 0.7854385817664031, 'hi': 0.9358974358974359}
+  H9: {'supported': True, 'gap': 0.09319999999999995}
+  H10: {'supported': True, 'recall': 0.71}

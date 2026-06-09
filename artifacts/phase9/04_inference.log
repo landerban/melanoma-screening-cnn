@@ -1,0 +1,30 @@
+# Phase 9 Step 3g + 3o — model inference summary
+Sample N = 300
+Device   = mps
+Threshold (used for predicted_malig) = 0.661
+
+## Overall analytical-sample AUC: 0.7708
+
+(Note: this AUC is NOT comparable to Phase 7a's 0.9513 — the sample is 50/50 balanced rather than 19.2% prevalent. It is a model-functioning sanity check: AUC > 0.85 = ckpt valid.)
+
+## Per-collection AUC (on N=100 each)
+  c=70: N=100 AUC=0.5480
+  c=212: N=100 AUC=0.9428
+  c=249: N=100 AUC=0.7776
+
+## Per-collection per-class mean P_malig
+  c=70 benign   : n=50 mean P_malig=0.5759
+  c=70 malignant: n=50 mean P_malig=0.6253
+  c=212 benign   : n=50 mean P_malig=0.4131
+  c=212 malignant: n=50 mean P_malig=0.8669
+  c=249 benign   : n=50 mean P_malig=0.5969
+  c=249 malignant: n=50 mean P_malig=0.7761
+
+## Inputs to H3 (cross-collection separability — between-class mean gap)
+  c=70: mean(malig) - mean(benign) = 0.0494
+  c=212: mean(malig) - mean(benign) = 0.4538
+  c=249: mean(malig) - mean(benign) = 0.1792
+
+## Files emitted
+  predictions: artifacts/phase9/04_predictions.csv
+  CAMs:        artifacts/phase9/04_gradcam (300 files)

@@ -197,6 +197,29 @@ def load_and_merge_metadata(training_data_dir: str, images_dir: str) -> "pd.Data
         raise FileNotFoundError(f"No CSVs found in {training_data_dir} or its subdirectories")
 
     collection_re = re.compile(r"metadata_c(\d+)\.csv$")
+
+    # W4-extended fix (Phase 9 finding, docs/phase9/05_analysis_log.md):
+    # The file-system iteration order of glob() differs across OSes
+    # (APFS = alphabetical, ext4 = creation-order). pd.concat preserves
+    # row order; pd.Series.unique() preserves first-occurrence order;
+    # rng.shuffle(patients) is therefore *order-dependent*. Same seed=42
+    # produces different patient_level_split partitions across OSes,
+    # breaking bit-exact reproducibility of Phase 6's test cohort.
+    # Force the creation-order [212, 70, 249] that elicer (Ubuntu ext4)
+    # used during Phase 6 retrain. Other CSVs follow by collection-id,
+    # then non-per-collection legacy CSVs.
+    ELICER_CREATION_ORDER = [212, 70, 249]
+
+    def _ord_key(p):
+        m = collection_re.search(p.name)
+        if m:
+            cid = int(m.group(1))
+            if cid in ELICER_CREATION_ORDER:
+                return (0, ELICER_CREATION_ORDER.index(cid))
+            return (1, cid)
+        return (2, str(p))
+    csvs = sorted(csvs, key=_ord_key)
+
     frames = []
     for p in csvs:
         try:

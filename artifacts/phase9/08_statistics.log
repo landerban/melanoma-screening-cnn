@@ -1,0 +1,80 @@
+# Phase 9 Step 4 — Statistical hypothesis tests
+Seed: 42, B (bootstrap): 5000
+α per test: 0.01 (Bonferroni-corrected family α = 0.006 for family of 8 tests)
+
+## H1 — cross-collection attention non-uniformity
+Categorical test: for each collection, what fraction of peaks land on (lesion ∪ skin) vs (vignette ∪ ruler ∪ hair)?
+
+  Contingency (collection × shortcut-vs-not):
+spatial_shortcut    0  1
+source_collection       
+70                 97  3
+212                96  4
+249                92  8
+
+  χ² = 2.947, dof = 2, p = 0.2291
+  H1 supported (p < 0.01)? False
+
+  H1 falsified — attention is uniformly low-shortcut across collections. Note this may reflect peak-IoU threshold strictness rather than absence of shortcut.
+
+## H2 — per-shortcut counterfactual ΔP ≠ 0
+Paired Wilcoxon signed-rank, P(no_X) vs P(original), on images with X present.
+
+  vignette  (N=20):
+    mean ΔP = +0.0070 [95% CI -0.0099, +0.0250]
+    median ΔP = +0.0030
+    Cohen's d (paired) = +0.174
+    Wilcoxon W = 87.0, p = 0.5217
+    H2-vignette supported? False
+
+  ruler  (N=39):
+    mean ΔP = +0.0030 [95% CI -0.0047, +0.0096]
+    median ΔP = +0.0013
+    Cohen's d (paired) = +0.130
+    Wilcoxon W = 287.5, p = 0.1525
+    H2-ruler supported? False
+
+  hair (NC)  (N=220):
+    mean ΔP = -0.0662 [95% CI -0.0837, -0.0486]
+    median ΔP = -0.0479
+    Cohen's d (paired) = -0.502
+    Wilcoxon W = 5473.0, p = 0.0000
+    H2-hair supported? True
+
+  colorcast  (N=155):
+    mean ΔP = +0.1039 [95% CI +0.0757, +0.1343]
+    median ΔP = +0.0458
+    Cohen's d (paired) = +0.536
+    Wilcoxon W = 2625.0, p = 0.0000
+    H2-colorcast supported? True
+
+## H3 — cross-collection AUC gap decomposition
+Compares per-collection AUC at original vs all_removed.
+
+  c=212:
+    AUC original    = 0.9644 [95% CI 0.9305, 0.9879]
+    AUC all_removed = 0.8708 [95% CI 0.7983, 0.9308]
+    ΔAUC            = -0.0936
+
+  c=249:
+    AUC original    = 0.7700 [95% CI 0.6707, 0.8571]
+    AUC all_removed = 0.7060 [95% CI 0.6016, 0.8053]
+    ΔAUC            = -0.0640
+
+  c=70:
+    AUC original    = 0.5300 [95% CI 0.4134, 0.6418]
+    AUC all_removed = 0.7232 [95% CI 0.6188, 0.8165]
+    ΔAUC            = +0.1932
+
+  Gap (c=212 − c=70):
+    original    = +0.4344
+    all_removed = +0.1476
+    closed by   = +0.2868 (+66.0%)
+  H3 supported (≥ 30% gap closed)? True
+
+## Primary Finding #1 — per-collection balanced AUC CIs
+Bootstrap CIs on the prevalence-balanced AUCs (sanity for the slide-9 reframing).
+  c=212: AUC = 0.9428 [95% CI 0.8953, 0.9790]
+  c=249: AUC = 0.7776 [95% CI 0.6796, 0.8622]
+  c=70: AUC = 0.5480 [95% CI 0.4316, 0.6626]
+

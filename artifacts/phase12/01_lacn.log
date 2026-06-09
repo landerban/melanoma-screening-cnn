@@ -1,0 +1,29 @@
+# Phase 12 — Lesion-Aware Color Normalization (LACN)
+Reliable-lesion sample N = 276
+Target Lab mean: [155.44 142.81 135.46]
+
+## Counterfactual ΔP per variant
+  full_norm (Phase 9 ref)     : mean Δ = +0.1349 [+0.1093, +0.1613],  Wilcoxon p = 1.476e-19
+  LACN (bg-only)              : mean Δ = +0.0938 [+0.0730, +0.1158],  Wilcoxon p = 3.309e-14
+  lesion-only norm            : mean Δ = +0.0526 [+0.0351, +0.0700],  Wilcoxon p = 8.658e-05
+
+## H14 — LACN (bg-only) reduces magnitude vs full_norm
+  full_norm: mean = +0.1349 [+0.1093, +0.1613]
+  LACN     : mean = +0.0938 [+0.0730, +0.1158]
+  |LACN| < |full_norm|? True
+  LACN sign retained (same as full_norm)? True
+  H14 supported (smaller magnitude, same sign)? True
+
+## H15 — lesion-only normalization affects malignants
+  Malignant subset N=137: mean Δ_lesion_only = +0.0214 [-0.0004, +0.0437]
+  H15 supported (|Δ| ≥ 0.02 on malignants)? True
+
+## H16 — per-collection LACN ratio
+  c=212 (N=97): LACN mean Δ = +0.1115 [+0.0718, +0.1538]
+  c=249 (N=85): LACN mean Δ = +0.0550 [+0.0300, +0.0796]
+  c=70 (N=94): LACN mean Δ = +0.1106 [+0.0713, +0.1512]
+  c=70 / c=212 ratio = 0.99
+  H16 supported (ratio > 1.5)? False
+
+## Files emitted
+  CSV: artifacts/phase12/01_lacn.csv

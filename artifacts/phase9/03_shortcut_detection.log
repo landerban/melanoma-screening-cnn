@@ -1,0 +1,54 @@
+# Phase 9 Step 3j-n — shortcut detection
+Processed: 300 / 300 images
+Missing on disk: 0
+
+## Per-shortcut prevalence in analytical sample
+  vignette     present:  20/300 (6.7%)
+  ruler        present:  39/300 (13.0%)
+  hair         present: 220/300 (73.3%)
+  color_cast   present: 155/300 (51.7%)
+
+## Per-shortcut prevalence by collection
+
+  vignette:
+    c=70: 0/100 (0.0%)
+    c=212: 0/100 (0.0%)
+    c=249: 20/100 (20.0%)
+
+  ruler:
+    c=70: 24/100 (24.0%)
+    c=212: 9/100 (9.0%)
+    c=249: 6/100 (6.0%)
+
+  hair:
+    c=70: 74/100 (74.0%)
+    c=212: 78/100 (78.0%)
+    c=249: 68/100 (68.0%)
+
+  color_cast:
+    c=70: 43/100 (43.0%)
+    c=212: 48/100 (48.0%)
+    c=249: 64/100 (64.0%)
+
+## By class (within analytical sample)
+
+  vignette:
+    benign: 9/150 (6.0%)
+    malignant: 11/150 (7.3%)
+
+  ruler:
+    benign: 24/150 (16.0%)
+    malignant: 15/150 (10.0%)
+
+  hair:
+    benign: 99/150 (66.0%)
+    malignant: 121/150 (80.7%)
+
+  color_cast:
+    benign: 83/150 (55.3%)
+    malignant: 72/150 (48.0%)
+
+## Files emitted
+  CSV:           artifacts/phase9/03_shortcut_detection.csv
+  Masks dir:     artifacts/phase9/03_shortcut_masks (279 masks)
+  Color sigs:    artifacts/phase9/03_color_signatures.npz

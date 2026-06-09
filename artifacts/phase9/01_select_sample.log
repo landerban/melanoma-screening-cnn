@@ -1,0 +1,48 @@
+# Phase 9 Step 3c-e — analytical sample selection
+Seed: 42
+Per-cell target: 50
+Target total N: 300
+
+## 1. Merge metadata
+Merged rows after dedup + Benign/Malignant filter: 61,396
+Per-collection counts: c=212: 11571, c=249: 16702, c=70: 33123
+Class balance: benign=49785, malignant=11611, ratio=4.29:1
+
+✓ Row count matches Phase 7 (61,396). Same data state as retrain.
+
+## 2. Patient-level split (seed=42, 0.65/0.10/0.10/0.15)
+Train: 39,647 images, 10,115 patients
+Val:   6,634 images, 1,555 patients
+Cal:   5,929 images, 1,555 patients
+Test:  9,186 images, 2,333 patients
+
+✓ Test cohort N=9,186, malignant=1,767 — matches Phase 7a.
+
+## 3. Test cohort per-collection breakdown
+(should match Phase 7c bootstrap_test_auc.log)
+  c=212: N=1,708 (exp 1,708), pos=305 (exp 305), prev=0.179 (exp 0.179)  ✓
+  c=70: N=4,944 (exp 4,944), pos=86 (exp 86), prev=0.017 (exp 0.017)  ✓
+  c=249: N=2,534 (exp 2,534), pos=1,376 (exp 1,376), prev=0.543 (exp 0.543)  ✓
+
+Saved full test cohort: artifacts/phase9/01_test_cohort.csv (9,186 rows)
+
+## 4. Stratified analytical sample (preregistered N=300)
+Stratification: 3 collections × {benign, malignant} × 50 each.
+
+  c=212, label=0: pool=1,403, selected=50
+  c=212, label=1: pool=305, selected=50
+  c=70, label=0: pool=4,858, selected=50
+  c=70, label=1: pool=86, selected=50
+  c=249, label=0: pool=1,158, selected=50
+  c=249, label=1: pool=1,376, selected=50
+
+Selected analytical sample: N=300
+Per-collection: c=212: 100, c=249: 100, c=70: 100
+Per-class: benign=150, malignant=150
+
+Saved analytical sample: artifacts/phase9/01_analytical_sample.csv
+
+## 5. Next steps
+  → Download 300 images by isic_id (Step 3f)
+  → Reproduce Phase 7a AUC on the full 9,186-image test cohort (Step 3g; requires images though)
+  → Acquire HAM10000 lesion masks from ISIC 2018 Task 1 (Step 3h)

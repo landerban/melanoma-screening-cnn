@@ -1,0 +1,17 @@
+# Phase 9 Step 3h-i — approximate lesion masks (Otsu)
+Sample N = 300
+
+## Reliability stats (heuristic: 1% <= area_frac <= 60%)
+  Reliable masks: 276/300 (92.0%)
+  Mean area fraction: 0.216
+  Median area fraction: 0.157
+
+## Reliability by collection
+  c=212: reliable=97/100 (97.0%), mean area=0.204
+  c=249: reliable=85/100 (85.0%), mean area=0.278
+  c=70: reliable=94/100 (94.0%), mean area=0.167
+
+## Note
+  - These are *approximate* lesion masks, not expert annotations.
+  - The H1 peak-region analysis treats lesion as a *coarse criterion*: peak inside mask = on-lesion, peak outside = off-lesion. The IoU semantics are not load-bearing.
+  - Sensitivity disclosure: 'Lesion masks via Otsu 'thresholding; the reliability flag (area in [0.01, 0.6]) filters images where Otsu mis-segmented (e.g., uniformly dark images with vignette dominating).'

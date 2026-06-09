@@ -1,0 +1,10 @@
+# Phase 9 Step 3f — analytical-sample download
+target: 300 images
+out_dir: training_data/images
+
+## Summary
+  downloaded: 300
+  cached:     0
+  failed:     0
+  elapsed:    156.9 s
+

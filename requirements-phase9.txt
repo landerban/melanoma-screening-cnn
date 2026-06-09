@@ -1,0 +1,42 @@
+# Phase 9 — Shortcut Disentanglement
+#
+# Pinned (>=) minimum versions. The exact set installed during Phase 9 is
+# frozen in requirements-phase9.lock.txt for bit-exact reproducibility.
+# This file is the *intent*; the .lock file is the *evidence*.
+#
+# Why pinned?
+#   torch>=2.5: MPS backend stable for EfficientNet-B0 inference on M3.
+#   numpy<2:   torchvision 0.20 has not yet certified numpy>=2 paths;
+#              avoid silent dtype regressions.
+#   opencv-python==4.10: Hough line detection API stable; later 4.11+
+#              flipped some default thresholds.
+#   scipy>=1.13: wilcoxon's `method='exact'` for small N reliable.
+
+# --- core ML ---
+torch>=2.5,<2.7
+torchvision>=0.20,<0.22
+numpy>=1.26,<2.0
+
+# --- data wrangling ---
+pandas>=2.2,<2.4
+scikit-learn>=1.5,<1.7
+
+# --- statistics ---
+scipy>=1.13,<1.16
+statsmodels>=0.14,<0.16
+
+# --- imaging ---
+pillow>=10.4
+opencv-python>=4.10,<4.11
+scikit-image>=0.24,<0.26
+
+# --- visualization ---
+matplotlib>=3.9,<3.11
+seaborn>=0.13,<0.15
+
+# --- progress / IO ---
+tqdm>=4.66
+requests>=2.32
+
+# --- ISIC ---
+isic-cli>=12.4
