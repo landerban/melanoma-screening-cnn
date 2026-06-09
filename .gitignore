@@ -11,3 +11,7 @@ artifacts/phase9/inpainted/
 artifacts/phase9/cam_pngs/
 artifacts/phase9/lama_weights/
 analytical_images/
+.DS_Store
+# Bundle archives + large binaries (artifacts.zip, .pptx)
+*.zip
+*.pptx
