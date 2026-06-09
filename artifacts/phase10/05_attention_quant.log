@@ -1,0 +1,19 @@
+# Phase 10 attention analysis — peak-on-lesion rate
+N = 276 (reliable lesion masks only)
+
+## Per-model peak-on-lesion rate
+  Phase 6  in-lesion rate: 49.6%
+  Phase 10 in-lesion rate: 50.0%
+  Δ: +0.4%
+
+## McNemar's test (paired)
+  b (P6 in → P10 out): 23
+  c (P6 out → P10 in): 24
+  χ² (continuity): 0.000
+  p (exact binomial): 1
+  Significant (p < 0.01)? False
+
+## Per-collection breakdown
+  c=212: P6 60.8% → P10 60.8% (Δ +0.0%, N=97)
+  c=249: P6 48.2% → P10 47.1% (Δ -1.2%, N=85)
+  c=70: P6 39.4% → P10 41.5% (Δ +2.1%, N=94)
