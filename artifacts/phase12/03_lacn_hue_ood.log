@@ -1,0 +1,47 @@
+# Phase 12 / Step 3 -- Channel-selective LACN (Hue-only)
+
+OOD cohort: PAD-UFES-20, N = 200
+Prevalence: 50.0% malignant
+
+## Reuse Otsu masks from Step 2: reliable=172/200
+
+Target Hue (circular mean over Phase 9 analytical sample): 359.08 deg
+
+Hue-LACN applied (reliable mask): 172/200
+Mean dP_hue_lacn (Hue-LACN - original P): +0.0531
+
+Calibration: N=100 (pos=50, neg=50)
+Test:        N=100 (pos=50, neg=50)
+
+## Threshold recalibration on calibration
+  Target recall: 0.79
+  tau* (largest tau with recall >= 0.79) = 0.650  (cal recall=0.800, cal spec=0.500).
+
+## Hue-only LACN test-set evaluation (N=100)
+  AUC (no LACN): 0.8500
+  AUC (Hue-LACN):0.7384
+
+  (A) No LACN  + tau=0.661  : recall=0.820  spec=0.720  prec=0.745  f1=0.781  TP=41 FN=9 TN=36 FP=14
+  (B) Hue LACN + tau=0.661  : recall=0.800  spec=0.520  prec=0.625  f1=0.702  TP=40 FN=10 TN=26 FP=24
+  (C) Hue LACN + tau_LACN   : recall=0.820  spec=0.520  prec=0.631  f1=0.713  TP=41 FN=9 TN=26 FP=24
+
+## Lab-LACN (Step 2) test-set comparison (same test split)
+  tau_LACN_Lab (re-derived from calibration): 0.670
+  AUC (Lab-LACN): 0.7984
+
+  (A) No LACN  + tau=0.661 : recall=0.820  spec=0.720  f1=0.781
+  (B) Lab LACN + tau=0.661 : recall=0.860  spec=0.600  f1=0.761
+  (C) Lab LACN + tau_LACN  : recall=0.840  spec=0.640  f1=0.764
+
+## Head-to-head: recalibrated C-Hue vs C-Lab vs A-baseline
+  Recall    : A=0.820  C-Lab=0.840  C-Hue=0.820
+  Specificity: A=0.720  C-Lab=0.640  C-Hue=0.520
+  F1        : A=0.781  C-Lab=0.764  C-Hue=0.713
+  AUC       : 0.850 (none)  0.798 (Lab)  0.738 (Hue)
+
+## Verdict
+  Hue-only LACN does not outperform Lab-LACN on the held-out test. The Lab-LACN trade-off appears to extend to Hue-only -- legitimate OOD color cues may live across multiple channels.
+
+## Files emitted
+  CSV:     artifacts/phase12/03_lacn_hue_ood.csv
+  Figure:  artifacts/phase12/figures/fig19_lacn_hue_vs_lab.png
