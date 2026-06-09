@@ -1,0 +1,28 @@
+# Phase 10 / Step 6 -- Integrated Gradients channel attribution
+
+Phase 9 sample restricted to reliable masks: N = 276
+Stratified sample: N = 60 (per-stratum target = 10)
+IG steps: 32
+
+## Per-image attribution computed for N = 60 images
+
+## H_bg -- background/foreground attribution ratio
+  Mean bg/fg Phase 6  = 1.2817  [median 0.9292]
+  Mean bg/fg Phase 10 = 1.0402  [median 0.9408]
+  Paired delta (P10 - P6): mean = -0.2415  95% CI [-0.4253, -0.0738]
+  Wilcoxon p-value: 0.1069
+  H_bg supported (delta < 0, CI excludes 0)? True
+
+## H_rgb -- RGB-channel share rebalance
+  Δr_share: mean = -0.0014  95% CI [-0.0044, +0.0015]  Wilcoxon p = 0.6323
+  Δg_share: mean = +0.0035  95% CI [+0.0008, +0.0064]  Wilcoxon p = 0.1664
+  Δb_share: mean = -0.0022  95% CI [-0.0038, -0.0006]  Wilcoxon p = 0.01133
+
+  Per-image RGB-share std (Phase 6  mean): 0.1181
+  Per-image RGB-share std (Phase 10 mean): 0.1181
+  H_rgb supported (Phase 10 share std < Phase 6 share std)? True
+
+## Files emitted
+  CSV: artifacts/phase10/06_ig_attribution.csv
+  Figure: artifacts/phase10/figures/fig22_ig_attribution_examples.png
+  Figure: artifacts/phase10/figures/fig21_ig_bg_fg_ratio.png
