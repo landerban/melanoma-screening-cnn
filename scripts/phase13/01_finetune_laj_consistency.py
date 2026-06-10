@@ -308,7 +308,11 @@ def evaluate(model, loader, device) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-ckpt", default="best_model.pth")
+    parser.add_argument("--base-ckpt",
+                        default="artifacts/phase10/best_model_color_invariant.pth",
+                        help="Default = Phase 10 ckpt (cumulative: Phase 13 trains "
+                             "on top of Phase 10's hue-jitter learning). For a clean "
+                             "ablation vs Phase 10 use --base-ckpt best_model.pth.")
     parser.add_argument("--out-ckpt",
                         default="artifacts/phase13/best_model_laj_consistency.pth")
     parser.add_argument("--log-path",
